@@ -8,9 +8,9 @@
 @media (prefers-color-scheme:dark){:root{--bg:#161616;--fg:#eee;--mut:#9a9a9a;--card:#232323;--ac:#7aa2ff;--bd:#383838;--ok:#4cc380;--bad:#ff8a80}}
 *{box-sizing:border-box}body{margin:0 auto;background:var(--bg);color:var(--fg);font:16px/1.4 system-ui,sans-serif;max-width:560px;padding:14px}
 h1{font-size:20px}.tabs{display:flex;gap:6px;margin-bottom:12px}
-.tabs button{flex:1;padding:10px 4px;border:1px solid var(--bd);background:var(--card);color:var(--fg);border-radius:10px;font-size:15px}
+.tabs button{flex:1 1 auto;padding:10px 2px;border:1px solid var(--bd);background:var(--card);color:var(--fg);border-radius:10px;font-size:14px;white-space:nowrap}
 .tabs button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
-input,select{width:100%;padding:10px;margin-top:8px;border:1px solid var(--bd);border-radius:8px;background:var(--card);color:var(--fg);font-size:16px}
+input,select,textarea{width:100%;padding:10px;margin-top:8px;border:1px solid var(--bd);border-radius:8px;background:var(--card);color:var(--fg);font:inherit;font-size:16px}
 .row{display:flex;gap:8px}.row>*{flex:1}
 .btn{width:100%;margin-top:12px;padding:13px;border:0;border-radius:10px;background:var(--ac);color:#fff;font-size:16px;font-weight:600}
 .btn.alt{background:var(--card);color:var(--fg);border:1px solid var(--bd)}
@@ -20,7 +20,7 @@ a.btn{display:block;text-align:center;text-decoration:none}
 .card{display:flex;gap:12px;align-items:center;cursor:pointer}.card .info{flex:1;min-width:0}
 .thumb{width:56px;height:84px;border-radius:6px;object-fit:cover;background:var(--bd);flex:none}
 .chev{font-size:24px;color:var(--mut)}.big{width:100%;max-height:360px;object-fit:contain;border-radius:10px;background:var(--card)}
-label{display:block;font-size:13px;color:var(--mut);margin-top:10px}label+input,label+select{margin-top:3px}
+label{display:block;font-size:13px;color:var(--mut);margin-top:10px}label+input,label+select,label+textarea{margin-top:3px}
 .btn.danger{background:transparent;color:var(--bad);border:1px solid var(--bad)}
 .warn{border:1px solid var(--bad);margin-top:12px}.warn .dup{border-top:1px solid var(--bd);padding:8px 0;font-size:15px}.warn .dup:first-child{margin-top:8px}
 .pos{color:var(--ok)}.neg{color:var(--bad)}[hidden]{display:none!important}
@@ -28,7 +28,7 @@ label{display:block;font-size:13px;color:var(--mut);margin-top:10px}label+input,
 <h1>Card Ledger</h1>
 <section id="login"><input id="em" type="email" placeholder="Email" autocomplete="username"><input id="pw" type="password" placeholder="Password" autocomplete="current-password"><button class="btn" id="go">Sign in</button><div class="msg" id="lmsg"></div></section>
 <main id="app" hidden>
-<div class="tabs"><button data-t="buy" class="on">Buy</button><button data-t="sell">Sell</button><button data-t="inv">Inventory</button><button data-t="look">Look up</button></div>
+<div class="tabs"><button data-t="buy" class="on">Buy</button><button data-t="sell">Sell</button><button data-t="inv">Inventory</button><button data-t="look">Look up</button><button data-t="exp">Expenses</button></div>
 <section id="buy">
  <div class="row"><button class="btn alt" data-pick="bcam">📷 Take photo</button><button class="btn alt" data-pick="blib">🖼️ Choose photo</button></div>
  <input id="bcam" type="file" accept="image/*" capture="environment" hidden><input id="blib" type="file" accept="image/*" hidden>
@@ -48,7 +48,36 @@ label{display:block;font-size:13px;color:var(--mut);margin-top:10px}label+input,
  <div class="row"><input id="sp" type="number" step="0.01" placeholder="Sold for $" inputmode="decimal"><input id="sf" type="number" step="0.01" placeholder="Fees $" inputmode="decimal"></div>
  <input id="sd" type="date"><button class="btn" id="ssave">Mark as sold</button>
 </section>
-<section id="inv" hidden><div id="stats" class="item"></div><div id="list"></div><button class="btn alt" id="csv">Export CSV</button><button class="btn alt" id="out">Sign out</button></section>
+<section id="inv" hidden><div id="stats" class="item"></div><div id="list"></div><button class="btn alt" id="csv">Export CSV</button>
+ <button class="btn alt" id="backup">Backup everything (zip)</button><div class="msg" id="bkmsg"></div>
+ <button class="btn alt" id="out">Sign out</button></section>
+<section id="exp" hidden>
+ <div class="row"><button class="btn alt" data-pick="xcam">📷 Take photo</button><button class="btn alt" data-pick="xlib">🖼️ Choose photo</button></div>
+ <input id="xcam" type="file" accept="image/*" capture="environment" hidden><input id="xlib" type="file" accept="image/*" hidden>
+ <div class="msg" id="xmsg">Photo a receipt to fill in the details.</div>
+ <input id="xv" placeholder="Vendor">
+ <div class="row"><div><label>Date</label><input id="xd" type="date"></div><div><label>Time (optional)</label><input id="xt" type="time"></div></div>
+ <div class="row"><input id="xa" type="number" step="0.01" placeholder="Amount $" inputmode="decimal"><input id="xx" type="number" step="0.01" placeholder="Tax $" inputmode="decimal"></div>
+ <select id="xc" data-cats></select>
+ <input id="xp" placeholder="Payment method">
+ <textarea id="xn" rows="2" placeholder="Notes"></textarea>
+ <button class="btn" id="xsave">Save expense</button>
+ <label>Year</label><select id="xyear"></select>
+ <div id="xstats" class="item"></div>
+ <div id="xlist"></div>
+ <button class="btn alt" id="xcsv">Export expenses CSV</button>
+</section>
+<section id="xedit" hidden>
+ <img id="xeimg" class="big" alt="" hidden>
+ <label>Vendor</label><input id="xev">
+ <div class="row"><div><label>Date</label><input id="xed" type="date"></div><div><label>Time (optional)</label><input id="xet" type="time"></div></div>
+ <div class="row"><div><label>Amount $</label><input id="xea" type="number" step="0.01" inputmode="decimal"></div><div><label>Tax $</label><input id="xex" type="number" step="0.01" inputmode="decimal"></div></div>
+ <label>Category</label><select id="xec" data-cats></select>
+ <label>Payment method</label><input id="xep">
+ <label>Notes</label><textarea id="xen" rows="3"></textarea>
+ <div class="msg" id="xemsg"></div>
+ <button class="btn" id="xesave">Save changes</button><button class="btn alt" id="xecancel">Cancel</button><button class="btn danger" id="xedel">Delete expense</button>
+</section>
 <section id="look" hidden>
  <div class="row"><button class="btn alt" data-pick="kcam">📷 Take photo</button><button class="btn alt" data-pick="klib">🖼️ Choose photo</button></div>
  <input id="kcam" type="file" accept="image/*" capture="environment" hidden><input id="klib" type="file" accept="image/*" hidden>
@@ -84,11 +113,14 @@ label{display:block;font-size:13px;color:var(--mut);margin-top:10px}label+input,
 const SUPABASE_URL='https://drqialhskknzigrkquli.supabase.co', SUPABASE_KEY='sb_publishable_SCAc5QwrIRwUITNx1Ha9Kw_EDY_iE_X';
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const money=n=>'$'+(Number(n)||0).toFixed(2),today=()=>new Date().toISOString().slice(0,10);
+const pad=n=>String(n).padStart(2,'0'),ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const money=n=>'$'+(Number(n)||0).toFixed(2),today=()=>ymd(new Date());
+const csvq=v=>'"'+String(v??'').replace(/"/g,'""')+'"',toCsv=(head,rows)=>[head.join(','),...rows.map(r=>r.map(csvq).join(','))].join('\n');
+function dl(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),10000)}
 const profit=c=>(c.sold_for||0)-(c.sell_fees||0)-(c.cost||0)-(c.buy_fees||0);
 let cards=[],bblob=null;$('#bd').value=today();$('#sd').value=today();
 
-const TABS=['buy','sell','inv','look'];
+const TABS=['buy','sell','inv','look','exp'];
 function showTab(t){document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x.dataset.t===t));
   TABS.forEach(x=>$('#'+x).hidden=x!==t)}
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.t));
@@ -157,7 +189,7 @@ $('#ssave').onclick=async()=>{const id=$('#ssel').value;if(!id||id==='__all'||!$
   if(error){$('#smsg').textContent='Save failed: '+error.message;return}
   $('#sp').value='';$('#sf').value='';$('#scam').value='';$('#slib').value='';sellMatch=null;$('#smsg').textContent='Marked as sold.';load()};
 
-async function load(){const{data}=await sb.from('cards').select('*').order('created_at',{ascending:false});cards=data||[];
+async function load(){loadExpenses();const{data}=await sb.from('cards').select('*').order('created_at',{ascending:false});cards=data||[];
   const paths=cards.map(c=>c.photo).filter(p=>p&&!urls[p]);
   if(paths.length){const{data:sg}=await sb.storage.from('slabs').createSignedUrls(paths,86400);(sg||[]).forEach(x=>{if(x.signedUrl)urls[x.path]=x.signedUrl})}
   render()}
@@ -165,9 +197,10 @@ function render(){const sold=cards.filter(c=>c.status==='sold'),st=cards.filter(
   $('#stats').innerHTML=`In stock ${st.length} · ${money(st.reduce((a,c)=>a+c.cost+c.buy_fees,0))}<br>Sold ${sold.length} · ${money(sold.reduce((a,c)=>a+c.sold_for,0))}<br>Net profit <b class="${sold.reduce((a,c)=>a+profit(c),0)>=0?'pos':'neg'}">${money(sold.reduce((a,c)=>a+profit(c),0))}</b>`;
   $('#list').innerHTML=cards.map(c=>`<div class="item card" data-id="${esc(c.id)}">${urls[c.photo]?`<img class="thumb" src="${esc(urls[c.photo])}" alt="">`:'<div class="thumb"></div>'}<div class="info"><b>${esc(c.grader)} ${esc(c.grade)} – ${esc(c.name)}</b><br><small>#${esc(c.cert)} · ${esc(c.set_name)}</small><br>Bought ${money(c.cost)} on ${esc(c.bought_on)}${c.status==='sold'?`<br>Sold ${money(c.sold_for)} on ${esc(c.sold_on)} · <span class="${profit(c)>=0?'pos':'neg'}">${money(profit(c))}</span>`:' · <small>in stock</small>'}</div><span class="chev">›</span></div>`).join('')||'<div class="msg">No cards yet.</div>';
   renderSell()}
-$('#csv').onclick=()=>{const h=['cert','grader','grade','name','set_name','bought_on','cost','buy_fees','status','sold_on','sold_for','sell_fees'],q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
-  const rows=cards.map(c=>h.map(k=>q(c[k])).join(',')+','+q(c.status==='sold'?profit(c).toFixed(2):''));
-  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([[h.join(',')+',profit',...rows].join('\n')],{type:'text/csv'}));a.download='card-ledger.csv';a.click()};
+const CARD_COLS=['cert','grader','grade','name','set_name','bought_on','cost','buy_fees','status','sold_on','sold_for','sell_fees'];
+const cardsCsv=(list,files)=>toCsv([...CARD_COLS,'profit',...(files?['photo_file']:[])],
+  list.map(c=>[...CARD_COLS.map(k=>c[k]),c.status==='sold'?profit(c).toFixed(2):'',...(files?[files.get(c.id)||'']:[])]));
+$('#csv').onclick=()=>dl(new Blob([cardsCsv(cards)],{type:'text/csv'}),'card-ledger.csv');
 
 let urls={},editing=null;
 $('#list').onclick=e=>{const el=e.target.closest('[data-id]');if(el)openEdit(el.dataset.id)};
@@ -224,4 +257,110 @@ $('#edel').onclick=async()=>{if(!confirm('Delete this card permanently?'))return
   const{error}=await sb.from('cards').delete().eq('id',editing.id);
   if(error){$('#emsg').textContent='Delete failed: '+error.message;return}
   closeEdit();load()};
+
+// ---------- Expenses ----------
+const CATS=['Grading fees','Shipping and postage','Supplies','Selling and platform fees','Travel','Meals','Show and booth fees','Software and subscriptions','Other'];
+document.querySelectorAll('[data-cats]').forEach(s=>s.innerHTML='<option value="">Category…</option>'+CATS.map(c=>`<option>${esc(c)}</option>`).join(''));
+// form field ids: new-expense form uses "x"+suffix, edit screen uses "xe"+suffix
+const XF={vendor:'v',expense_date:'d',expense_time:'t',amount:'a',tax:'x',category:'c',payment_method:'p',notes:'n'};
+function getX(p){const g=k=>$('#'+p+XF[k]).value.trim();
+  return{vendor:g('vendor'),expense_date:g('expense_date')||null,expense_time:g('expense_time')||null,amount:+g('amount')||0,tax:+g('tax')||0,
+    category:g('category')||'Other',payment_method:g('payment_method'),notes:g('notes')}}
+function setX(p,e){Object.entries(XF).forEach(([k,s])=>$('#'+p+s).value=e[k]??'')}
+function checkX(p){if(!$('#'+p+'a').value)return'Enter the amount.';if(!$('#'+p+'d').value)return'Enter the date.';return''}
+// normalise what read-receipt returns into ISO date, HH:MM time, numbers and one of our categories
+function isoDate(s){if(!s)return'';const m=String(s).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);if(m)return m[1]+'-'+pad(m[2])+'-'+pad(m[3]);
+  const d=new Date(s);return isNaN(d)?'':ymd(d)}
+function hhmm(s){const m=String(s??'').match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*([ap])?/i);if(!m)return'';let h=+m[1];
+  if(m[3])h=h%12+(/p/i.test(m[3])?12:0);return h<24&&+m[2]<60?pad(h)+':'+m[2]:''}
+const num=v=>{const n=parseFloat(String(v??'').replace(/[^0-9.\-]/g,''));return isNaN(n)?'':n.toFixed(2)};
+function matchCat(c){const l=String(c??'').trim().toLowerCase();if(!l)return'';
+  return CATS.find(x=>x.toLowerCase()===l)||CATS.find(x=>x.toLowerCase().split(/\W+/).some(w=>w.length>3&&w!=='fees'&&l.includes(w)))||'Other'}
+
+let expenses=[],rurls={},xblob=null,xraw=null,xediting=null;$('#xd').value=today();
+async function onReceipt(e){const f=e.target.files[0];e.target.value='';if(!f)return;xblob=await shrink(f);xraw=null;$('#xmsg').textContent='Reading receipt…';
+  try{const{data,error}=await sb.functions.invoke('read-receipt',{body:{image:await b64(xblob)}});if(error)throw error;const d=data||{};xraw=d;
+    setX('x',{vendor:d.vendor||'',expense_date:isoDate(d.date)||today(),expense_time:hhmm(d.time),amount:num(d.total),tax:num(d.tax),
+      category:matchCat(d.category),payment_method:d.payment_method||'',notes:d.summary||''});
+    $('#xmsg').textContent='Check the details, then save.'}
+  catch{$('#xmsg').textContent='Could not read receipt. Enter the details by hand.'}}
+$('#xcam').onchange=onReceipt;$('#xlib').onchange=onReceipt;
+$('#xsave').onclick=async()=>{const bad=checkX('x');if(bad){$('#xmsg').textContent=bad;return}
+  $('#xsave').disabled=true;$('#xmsg').textContent='Saving…';
+  try{let photo=null;
+    if(xblob){const u=(await sb.auth.getUser()).data.user,path=u.id+'/'+Date.now()+'.jpg';
+      const up=await sb.storage.from('receipts').upload(path,xblob,{contentType:'image/jpeg'});
+      if(up.error){$('#xmsg').textContent='Photo upload failed: '+up.error.message;return}photo=path}
+    const{error}=await sb.from('expenses').insert({...getX('x'),photo,raw:xraw});
+    if(error){if(photo)sb.storage.from('receipts').remove([photo]);$('#xmsg').textContent='Save failed: '+error.message;return}
+    setX('x',{expense_date:today()});xblob=null;xraw=null;$('#xmsg').textContent='Saved. Ready for the next receipt.';loadExpenses()}
+  finally{$('#xsave').disabled=false}};
+
+const xsort=(a,b)=>(b.expense_date||'').localeCompare(a.expense_date||'')||(b.expense_time||'').localeCompare(a.expense_time||'')||String(b.created_at).localeCompare(String(a.created_at));
+async function loadExpenses(){const{data,error}=await sb.from('expenses').select('*');if(error){$('#xstats').textContent='Could not load expenses: '+error.message;return}
+  expenses=(data||[]).sort(xsort);
+  const paths=expenses.map(e=>e.photo).filter(p=>p&&!rurls[p]);
+  if(paths.length){const{data:sg}=await sb.storage.from('receipts').createSignedUrls(paths,86400);(sg||[]).forEach(x=>{if(x.signedUrl)rurls[x.path]=x.signedUrl})}
+  renderExpenses()}
+const yearOf=e=>(e.expense_date||'').slice(0,4);
+function renderExpenses(){const cur=String(new Date().getFullYear()),keep=$('#xyear').value||cur;
+  const years=[...new Set([cur,keep,...expenses.map(yearOf).filter(Boolean)])].sort().reverse();
+  $('#xyear').innerHTML=years.map(y=>`<option>${esc(y)}</option>`).join('');$('#xyear').value=keep;
+  const list=expenses.filter(e=>yearOf(e)===keep),tot={};list.forEach(e=>tot[e.category||'Other']=(tot[e.category||'Other']||0)+(+e.amount||0));
+  $('#xstats').innerHTML=`<b>${esc(keep)} total ${money(list.reduce((a,e)=>a+(+e.amount||0),0))}</b> · ${list.length} expense${list.length===1?'':'s'}`+
+    Object.entries(tot).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`<br>${esc(c)} <small>${money(v)}</small>`).join('');
+  $('#xlist').innerHTML=list.map(e=>`<div class="item card" data-xid="${esc(e.id)}">${rurls[e.photo]?`<img class="thumb" src="${esc(rurls[e.photo])}" alt="">`:'<div class="thumb"></div>'}<div class="info"><b>${esc(e.vendor||'(no vendor)')}</b><br><small>${esc(e.expense_date)}${e.expense_time?' '+esc(String(e.expense_time).slice(0,5)):''} · ${esc(e.category)}</small><br>${money(e.amount)}</div><span class="chev">›</span></div>`).join('')||'<div class="msg">No expenses for '+esc(keep)+'.</div>'}
+$('#xyear').onchange=renderExpenses;
+
+$('#xlist').onclick=e=>{const el=e.target.closest('[data-xid]');if(el)openXEdit(el.dataset.xid)};
+function openXEdit(id){const x=expenses.find(e=>e.id===id);if(!x)return;xediting=x;
+  setX('xe',{...x,expense_time:x.expense_time?String(x.expense_time).slice(0,5):'',category:CATS.includes(x.category)?x.category:'Other'});
+  const u=rurls[x.photo];$('#xeimg').hidden=!u;if(u)$('#xeimg').src=u;$('#xemsg').textContent='';
+  TABS.forEach(t=>$('#'+t).hidden=true);$('.tabs').hidden=true;$('#xedit').hidden=false;scrollTo(0,0)}
+function closeXEdit(){xediting=null;$('#xedit').hidden=true;$('.tabs').hidden=false;$('#exp').hidden=false}
+$('#xecancel').onclick=closeXEdit;
+$('#xesave').onclick=async()=>{const bad=checkX('xe');if(bad){$('#xemsg').textContent=bad;return}
+  const{error}=await sb.from('expenses').update(getX('xe')).eq('id',xediting.id);
+  if(error){$('#xemsg').textContent='Save failed: '+error.message;return}
+  closeXEdit();loadExpenses()};
+$('#xedel').onclick=async()=>{if(!confirm('Delete this expense and its receipt photo permanently?'))return;
+  if(xediting.photo){const{error}=await sb.storage.from('receipts').remove([xediting.photo]);if(error){$('#xemsg').textContent='Could not delete photo: '+error.message;return}}
+  const{error}=await sb.from('expenses').delete().eq('id',xediting.id);
+  if(error){$('#xemsg').textContent='Delete failed: '+error.message;return}
+  closeXEdit();loadExpenses()};
+
+const EXP_COLS=['expense_date','expense_time','vendor','category','amount','tax','payment_method','notes'];
+const expCsv=(list,files)=>toCsv([...EXP_COLS,...(files?['photo_file']:[])],list.map(e=>[...EXP_COLS.map(k=>k==='expense_time'&&e[k]?String(e[k]).slice(0,5):e[k]),...(files?[files.get(e.id)||'']:[])]));
+$('#xcsv').onclick=()=>{const y=$('#xyear').value;dl(new Blob([expCsv(expenses.filter(e=>yearOf(e)===y).reverse())],{type:'text/csv'}),'card-ledger-expenses-'+y+'.csv')};
+
+// ---------- Backup: one zip with both CSVs and every photo ----------
+let jszipP=null;
+const loadJSZip=()=>jszipP||=new Promise((ok,fail)=>{const s=document.createElement('script');
+  s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=()=>ok(window.JSZip);
+  s.onerror=()=>{jszipP=null;s.remove();fail(new Error('Could not load JSZip'))};document.head.appendChild(s)});
+const slug=s=>String(s??'').normalize('NFKD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9.]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60);
+$('#backup').onclick=async()=>{const btn=$('#backup'),say=t=>$('#bkmsg').textContent=t;btn.disabled=true;
+  try{say('Loading zip library…');const JSZip=await loadJSZip();
+    say('Reading cards and expenses…');
+    const[c,x]=await Promise.all([sb.from('cards').select('*').order('bought_on'),sb.from('expenses').select('*')]);
+    if(c.error||x.error)throw c.error||x.error;
+    const allCards=c.data||[],allExp=(x.data||[]).sort(xsort).reverse(),zip=new JSZip(),used=new Set(),files=new Map(),missing=[];
+    const fname=(dir,parts,path)=>{const ext=(path.match(/\.[A-Za-z0-9]+$/)||['.jpg'])[0].toLowerCase(),base=dir+'/'+(parts.map(slug).filter(Boolean).join('_')||'photo');
+      let n=base+ext,i=2;while(used.has(n))n=base+'-'+i+++ext;used.add(n);return n};
+    const jobs=[...allCards.filter(r=>r.photo).map(r=>({bucket:'slabs',row:r,file:fname('slab-photos',[r.bought_on,r.grader+' '+r.grade,r.name,r.cert],r.photo)})),
+      ...allExp.filter(r=>r.photo).map(r=>({bucket:'receipts',row:r,file:fname('receipt-photos',[r.expense_date,r.vendor,num(r.amount)],r.photo)}))];
+    const total=jobs.length;let done=0;say(`Downloading photos 0 / ${total}…`);
+    const worker=async()=>{for(let j;(j=jobs.shift());){
+      const{data,error}=await sb.storage.from(j.bucket).download(j.row.photo);
+      if(error||!data)missing.push(`${j.bucket}/${j.row.photo}: ${error?.message||'no data'}`);
+      else{zip.file(j.file,data,{binary:true,compression:'STORE'});files.set(j.row.id,j.file)}
+      say(`Downloading photos ${++done} / ${total}…`)}};
+    await Promise.all(Array.from({length:Math.min(4,total)},worker));
+    zip.file('cards.csv',cardsCsv(allCards,files));zip.file('expenses.csv',expCsv(allExp,files));
+    if(missing.length)zip.file('missing-photos.txt',missing.join('\n'));
+    const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE'},m=>say(`Building zip ${Math.round(m.percent)}%…`));
+    dl(blob,'card-ledger-backup-'+today()+'.zip');
+    say(`Backup saved: ${allCards.length} cards, ${allExp.length} expenses, ${total-missing.length} of ${total} photos`+(missing.length?` (${missing.length} missing, listed in missing-photos.txt).`:'.'))}
+  catch(e){say('Backup failed: '+(e.message||e))}
+  finally{btn.disabled=false}};
 </script></body></html>
