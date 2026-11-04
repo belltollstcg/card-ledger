@@ -8,12 +8,13 @@
 @media (prefers-color-scheme:dark){:root{--bg:#161616;--fg:#eee;--mut:#9a9a9a;--card:#232323;--ac:#7aa2ff;--bd:#383838;--ok:#4cc380;--bad:#ff8a80}}
 *{box-sizing:border-box}body{margin:0 auto;background:var(--bg);color:var(--fg);font:16px/1.4 system-ui,sans-serif;max-width:560px;padding:14px}
 h1{font-size:20px}.tabs{display:flex;gap:6px;margin-bottom:12px}
-.tabs button{flex:1;padding:10px;border:1px solid var(--bd);background:var(--card);color:var(--fg);border-radius:10px;font-size:15px}
+.tabs button{flex:1;padding:10px 4px;border:1px solid var(--bd);background:var(--card);color:var(--fg);border-radius:10px;font-size:15px}
 .tabs button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
 input,select{width:100%;padding:10px;margin-top:8px;border:1px solid var(--bd);border-radius:8px;background:var(--card);color:var(--fg);font-size:16px}
 .row{display:flex;gap:8px}.row>*{flex:1}
 .btn{width:100%;margin-top:12px;padding:13px;border:0;border-radius:10px;background:var(--ac);color:#fff;font-size:16px;font-weight:600}
 .btn.alt{background:var(--card);color:var(--fg);border:1px solid var(--bd)}
+a.btn{display:block;text-align:center;text-decoration:none}
 .msg{font-size:14px;color:var(--mut);margin:8px 0;min-height:20px}
 .item{background:var(--card);border-radius:10px;padding:10px 12px;margin:8px 0}.item small{color:var(--mut)}
 .card{display:flex;gap:12px;align-items:center;cursor:pointer}.card .info{flex:1;min-width:0}
@@ -26,7 +27,7 @@ label{display:block;font-size:13px;color:var(--mut);margin-top:10px}label+input,
 <h1>Card Ledger</h1>
 <section id="login"><input id="em" type="email" placeholder="Email" autocomplete="username"><input id="pw" type="password" placeholder="Password" autocomplete="current-password"><button class="btn" id="go">Sign in</button><div class="msg" id="lmsg"></div></section>
 <main id="app" hidden>
-<div class="tabs"><button data-t="buy" class="on">Buy</button><button data-t="sell">Sell</button><button data-t="inv">Inventory</button></div>
+<div class="tabs"><button data-t="buy" class="on">Buy</button><button data-t="sell">Sell</button><button data-t="inv">Inventory</button><button data-t="look">Look up</button></div>
 <section id="buy">
  <div class="row"><button class="btn alt" data-pick="bcam">📷 Take photo</button><button class="btn alt" data-pick="blib">🖼️ Choose photo</button></div>
  <input id="bcam" type="file" accept="image/*" capture="environment" hidden><input id="blib" type="file" accept="image/*" hidden>
@@ -45,6 +46,21 @@ label{display:block;font-size:13px;color:var(--mut);margin-top:10px}label+input,
  <input id="sd" type="date"><button class="btn" id="ssave">Mark as sold</button>
 </section>
 <section id="inv" hidden><div id="stats" class="item"></div><div id="list"></div><button class="btn alt" id="csv">Export CSV</button><button class="btn alt" id="out">Sign out</button></section>
+<section id="look" hidden>
+ <div class="row"><button class="btn alt" data-pick="kcam">📷 Take photo</button><button class="btn alt" data-pick="klib">🖼️ Choose photo</button></div>
+ <input id="kcam" type="file" accept="image/*" capture="environment" hidden><input id="klib" type="file" accept="image/*" hidden>
+ <div class="msg" id="kmsg">Photo a slab, or type the details, to look it up.</div>
+ <div class="row"><input id="kg" placeholder="Grader"><input id="kgr" placeholder="Grade"></div>
+ <input id="kc" placeholder="Cert number" inputmode="numeric"><input id="kn" placeholder="Card name"><input id="ks" placeholder="Set / year">
+ <div id="klinks" hidden>
+  <div class="item"><small>Search text</small><br><b id="kphrase"></b></div>
+  <a class="btn" id="ksold" target="_blank" rel="noopener">eBay sold listings</a>
+  <a class="btn" id="kact" target="_blank" rel="noopener">eBay active listings</a>
+  <div class="row"><a class="btn" id="kcl" target="_blank" rel="noopener">Card Ladder</a><button class="btn alt" data-copy>Copy search text</button></div>
+  <div class="row"><a class="btn" id="kalt" target="_blank" rel="noopener">ALT</a><button class="btn alt" data-copy>Copy search text</button></div>
+ </div>
+ <a class="btn alt" id="kcert" target="_blank" rel="noopener" hidden>Cert page</a>
+</section>
 <section id="edit" hidden>
  <img id="eimg" class="big" alt="" hidden>
  <div class="row"><div><label>Grader</label><input id="eg"></div><div><label>Grade</label><input id="egr"></div></div>
@@ -56,7 +72,7 @@ label{display:block;font-size:13px;color:var(--mut);margin-top:10px}label+input,
  <div id="esold"><div class="row"><div><label>Sold for $</label><input id="esp" type="number" step="0.01" inputmode="decimal"></div><div><label>Sell fees $</label><input id="esf" type="number" step="0.01" inputmode="decimal"></div></div>
  <label>Date sold</label><input id="esd" type="date"></div>
  <div class="msg" id="emsg"></div>
- <button class="btn" id="esave">Save changes</button><button class="btn alt" id="ecancel">Cancel</button><button class="btn danger" id="edel">Delete card</button>
+ <button class="btn" id="esave">Save changes</button><button class="btn alt" id="elook">Look up</button><button class="btn alt" id="ecancel">Cancel</button><button class="btn danger" id="edel">Delete card</button>
 </section>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.js"></script>
@@ -69,9 +85,10 @@ const money=n=>'$'+(Number(n)||0).toFixed(2),today=()=>new Date().toISOString().
 const profit=c=>(c.sold_for||0)-(c.sell_fees||0)-(c.cost||0)-(c.buy_fees||0);
 let cards=[],bblob=null;$('#bd').value=today();$('#sd').value=today();
 
-document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
-  document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));
-  ['buy','sell','inv'].forEach(t=>$('#'+t).hidden=t!==b.dataset.t)});
+const TABS=['buy','sell','inv','look'];
+function showTab(t){document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x.dataset.t===t));
+  TABS.forEach(x=>$('#'+x).hidden=x!==t)}
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.t));
 document.querySelectorAll('[data-pick]').forEach(b=>b.onclick=()=>$('#'+b.dataset.pick).click());
 
 $('#go').onclick=async()=>{const{error}=await sb.auth.signInWithPassword({email:$('#em').value,password:$('#pw').value});if(error)$('#lmsg').textContent=error.message};
@@ -130,10 +147,41 @@ function openEdit(id){const c=cards.find(x=>x.id===id);if(!c)return;editing=c;
   Object.entries(v).forEach(([k,x])=>$('#'+k).value=x??'');
   const u=urls[c.photo];$('#eimg').hidden=!u;if(u)$('#eimg').src=u;
   $('#esold').hidden=c.status!=='sold';$('#emsg').textContent='';
-  ['buy','sell','inv'].forEach(t=>$('#'+t).hidden=true);$('.tabs').hidden=true;$('#edit').hidden=false;scrollTo(0,0)}
+  TABS.forEach(t=>$('#'+t).hidden=true);$('.tabs').hidden=true;$('#edit').hidden=false;scrollTo(0,0)}
 function closeEdit(){editing=null;$('#edit').hidden=true;$('.tabs').hidden=false;$('#inv').hidden=false}
 $('#est').onchange=()=>$('#esold').hidden=$('#est').value!=='sold';
 $('#ecancel').onclick=closeEdit;
+$('#elook').onclick=()=>{const c=editing;closeEdit();fillLook({grader:c.grader,grade:c.grade,cert:c.cert,name:c.name,set:c.set_name});
+  $('#kmsg').textContent='Saved details for this card. Edit to refine the search.';showTab('look');scrollTo(0,0)};
+
+// Look up: build price-check and cert links from the slab details
+const enc=encodeURIComponent;
+const LINKS={
+  ebaySold:p=>'https://www.ebay.com/sch/i.html?_nkw='+enc(p)+'&LH_Sold=1&LH_Complete=1',
+  ebayActive:p=>'https://www.ebay.com/sch/i.html?_nkw='+enc(p),
+  cardLadder:p=>'https://www.cardladder.com/ladder?category=Pokemon&query='+enc(p),
+  alt:p=>'https://alt.xyz/browse?query='+enc(p)};
+function certLink(grader,cert){const g=grader.toUpperCase().replace(/[^A-Z]/g,''),c=enc(cert);if(!cert)return null;
+  if(g.startsWith('PSA'))return{label:'PSA cert page',url:'https://www.psacard.com/cert/'+c};
+  if(g.startsWith('CGC'))return{label:'CGC cert page',url:'https://www.cgccards.com/certlookup/'+c+'/'};
+  const t=g.startsWith('BVG')?'BVG':g.startsWith('BCCG')?'BCCG':/^(BGS|BECKETT)/.test(g)?'BGS':null;
+  return t&&{label:'Beckett cert page',url:'https://www.beckett.com/grading/card-lookup?item_id='+c+'&item_type='+t}}
+const kf={grader:'kg',grade:'kgr',cert:'kc',name:'kn',set:'ks'},kv=k=>$('#'+kf[k]).value.trim();
+function fillLook(d){Object.entries(kf).forEach(([k,id])=>$('#'+id).value=d[k]||'');updateLook()}
+function updateLook(){const p=['name','set','grader','grade'].map(kv).filter(Boolean).join(' ').replace(/\s+/g,' ');
+  $('#klinks').hidden=!p;$('#kphrase').textContent=p;
+  if(p){$('#ksold').href=LINKS.ebaySold(p);$('#kact').href=LINKS.ebayActive(p);$('#kcl').href=LINKS.cardLadder(p);$('#kalt').href=LINKS.alt(p)}
+  const cl=certLink(kv('grader'),kv('cert'));$('#kcert').hidden=!cl;if(cl){$('#kcert').href=cl.url;$('#kcert').textContent=cl.label}}
+Object.values(kf).forEach(id=>$('#'+id).oninput=updateLook);
+async function onLook(e){const f=e.target.files[0];e.target.value='';if(!f)return;$('#kmsg').textContent='Reading slab…';
+  try{fillLook(await readSlab(await shrink(f)));$('#kmsg').textContent='Check the details and fix any misreads.'}
+  catch{$('#kmsg').textContent='Could not read photo. Enter the details by hand.'}}
+$('#kcam').onchange=onLook;$('#klib').onchange=onLook;
+async function copyText(t){try{await navigator.clipboard.writeText(t);return true}catch{
+  const a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();
+  const ok=document.execCommand('copy');a.remove();return ok}}
+document.querySelectorAll('[data-copy]').forEach(b=>b.onclick=async()=>{const ok=await copyText($('#kphrase').textContent);
+  b.textContent=ok?'Copied ✓':'Copy failed';clearTimeout(b._t);b._t=setTimeout(()=>b.textContent='Copy search text',1500)});
 $('#esave').onclick=async()=>{const cert=$('#ec').value.trim(),sold=$('#est').value==='sold';
   if(!cert){$('#emsg').textContent='Cert number is required.';return}
   if(sold&&!$('#esp').value){$('#emsg').textContent='Enter the sale price.';return}

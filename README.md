@@ -9,6 +9,7 @@ The app is a single static page hosted on **GitHub Pages**. **Supabase** handles
 - **Buy**: take a photo of a slab or pick one from your library. The `read-slab` function fills in grader, grade, cert number, card name and set. Then you add the price paid, fees and date, and save the card to inventory. The photo goes to storage with the card.
 - **Sell**: photograph the slab to find the matching in-stock card by cert number, or pick it from a list. Enter the sale price, fees and date, and mark it sold.
 - **Inventory**: a list of every card with its slab thumbnail, plus totals: the number of cards in stock and what they cost, the number sold and the revenue from them, and net profit.
+- **Look up**: photograph a slab, or open a card from Inventory and tap **Look up**, to check prices. The search text is built from name, set, grader and grade. It links to eBay sold and active listings, Card Ladder and ALT, with a "Copy search text" button for pasting into an app. A cert page link (PSA, CGC or Beckett) appears when the grader is recognised. Look-ups aren't saved.
 - **Edit / delete**: tap a card to fix any field, change its status, or delete it along with its photo.
 - **CSV export**: download the whole ledger, including profit per sold card.
 - **Installable**: a web app manifest and icon, so you can add it to your home screen.
