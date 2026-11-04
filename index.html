@@ -22,6 +22,7 @@ a.btn{display:block;text-align:center;text-decoration:none}
 .chev{font-size:24px;color:var(--mut)}.big{width:100%;max-height:360px;object-fit:contain;border-radius:10px;background:var(--card)}
 label{display:block;font-size:13px;color:var(--mut);margin-top:10px}label+input,label+select{margin-top:3px}
 .btn.danger{background:transparent;color:var(--bad);border:1px solid var(--bad)}
+.warn{border:1px solid var(--bad);margin-top:12px}.warn .dup{border-top:1px solid var(--bd);padding:8px 0;font-size:15px}.warn .dup:first-child{margin-top:8px}
 .pos{color:var(--ok)}.neg{color:var(--bad)}[hidden]{display:none!important}
 </style></head><body>
 <h1>Card Ledger</h1>
@@ -36,6 +37,8 @@ label{display:block;font-size:13px;color:var(--mut);margin-top:10px}label+input,
  <input id="bc" placeholder="Cert number" inputmode="numeric"><input id="bn" placeholder="Card name"><input id="bs" placeholder="Set / year">
  <div class="row"><input id="bp" type="number" step="0.01" placeholder="Price paid $" inputmode="decimal"><input id="bf" type="number" step="0.01" placeholder="Fees $" inputmode="decimal"></div>
  <input id="bd" type="date"><button class="btn" id="bsave">Save to inventory</button>
+ <div id="bdup" class="item warn" hidden><b id="bdupmsg"></b><div id="bduplist"></div>
+  <div class="row"><button class="btn" id="bdupsave">Save anyway (new purchase)</button><button class="btn alt" id="bdupcancel">Cancel</button></div></div>
 </section>
 <section id="sell" hidden>
  <div class="row"><button class="btn alt" data-pick="scam">📷 Take photo</button><button class="btn alt" data-pick="slib">🖼️ Choose photo</button></div>
@@ -107,35 +110,61 @@ async function onBuy(e){const f=e.target.files[0];if(!f)return;bblob=await shrin
   catch{$('#bmsg').textContent='Could not read photo. Enter by hand.'}}
 $('#bcam').onchange=onBuy;$('#blib').onchange=onBuy;
 
-$('#bsave').onclick=async()=>{const cert=$('#bc').value.trim();
+const hideDup=()=>$('#bdup').hidden=true;
+$('#bc').addEventListener('input',hideDup);$('#bdupcancel').onclick=()=>{hideDup();$('#bmsg').textContent='Not saved.'};
+$('#bsave').onclick=async()=>{const cert=$('#bc').value.trim();hideDup();
   if(!cert||!$('#bp').value){$('#bmsg').textContent='Cert number and price paid are required.';return}
+  $('#bsave').disabled=true;$('#bmsg').textContent='Checking for this cert…';
+  const{data:dups,error}=await sb.from('cards').select('grader,grade,name,bought_on,cost,status,sold_on,sold_for').eq('cert',cert).order('bought_on');
+  $('#bsave').disabled=false;
+  if(error){$('#bmsg').textContent='Could not check for duplicates: '+error.message;return}
+  if(!dups.length)return saveBuy(cert);
+  $('#bdupmsg').textContent=dups.some(c=>c.status==='inventory')?'This cert is already in your inventory. You may have scanned it twice.':"You've owned this card before. Buying it back?";
+  $('#bduplist').innerHTML=dups.map(c=>`<div class="dup">${esc(c.grader)} ${esc(c.grade)} – ${esc(c.name)}<br><small>Bought ${esc(c.bought_on||'?')} for ${money(c.cost)} · ${c.status==='sold'?`Sold ${esc(c.sold_on||'?')} for ${money(c.sold_for)}`:'In stock'}</small></div>`).join('');
+  $('#bmsg').textContent='Not saved yet. A card with cert '+cert+' already exists.';$('#bdup').hidden=false;$('#bdup').scrollIntoView({block:'nearest'})};
+$('#bdupsave').onclick=()=>{hideDup();saveBuy($('#bc').value.trim())};
+async function saveBuy(cert){$('#bsave').disabled=true;$('#bmsg').textContent='Saving…';try{await insertBuy(cert)}finally{$('#bsave').disabled=false}}
+async function insertBuy(cert){
   let photo=null;
   if(bblob){const u=(await sb.auth.getUser()).data.user,path=u.id+'/'+Date.now()+'.jpg';
     const up=await sb.storage.from('slabs').upload(path,bblob,{contentType:'image/jpeg'});if(!up.error)photo=path}
   const{error}=await sb.from('cards').insert({cert,grader:$('#bg').value.trim(),grade:$('#bgr').value.trim(),name:$('#bn').value.trim(),set_name:$('#bs').value.trim(),
     cost:+$('#bp').value||0,buy_fees:+$('#bf').value||0,bought_on:$('#bd').value,photo});
   if(error){$('#bmsg').textContent='Save failed: '+error.message;return}
-  ['bg','bgr','bc','bn','bs','bp','bf','bcam','blib'].forEach(i=>$('#'+i).value='');bblob=null;$('#bmsg').textContent='Saved. Ready for the next card.';load()};
+  ['bg','bgr','bc','bn','bs','bp','bf','bcam','blib'].forEach(i=>$('#'+i).value='');bblob=null;$('#bmsg').textContent='Saved. Ready for the next card.';load()}
 
-async function onSell(e){const f=e.target.files[0];if(!f)return;$('#smsg').textContent='Reading slab…';
-  try{const d=await readSlab(await shrink(f)),m=cards.find(c=>c.status==='inventory'&&String(c.cert)===String(d.cert).trim());
-    if(m){$('#ssel').value=m.id;$('#smsg').textContent='Matched: '+m.name+'. Enter the sale price.'}else $('#smsg').textContent='No match for cert '+(d.cert||'?')+'. Pick it below.'}
-  catch{$('#smsg').textContent='Could not read photo. Pick the card below.'}}
+// Sell: only in-stock cards match; if several share the cert, narrow the list and make the user pick
+let sellMatch=null;
+async function onSell(e){const f=e.target.files[0];e.target.value='';if(!f)return;$('#smsg').textContent='Reading slab…';sellMatch=null;
+  try{const d=await readSlab(await shrink(f)),cert=String(d.cert??'').trim(),
+      ms=cert?cards.filter(c=>c.status==='inventory'&&String(c.cert).trim()===cert):[];
+    if(ms.length>1){sellMatch=ms;$('#smsg').textContent=ms.length+' in-stock cards have cert '+cert+'. Pick which one you sold.'}
+    else if(ms.length){$('#smsg').textContent='Matched: '+ms[0].name+'. Enter the sale price.'}
+    else $('#smsg').textContent='No in-stock card with cert '+(cert||'?')+'. Pick it below.';
+    renderSell();if(ms.length)$('#ssel').value=ms.length===1?ms[0].id:''}
+  catch{renderSell();$('#smsg').textContent='Could not read photo. Pick the card below.'}}
 $('#scam').onchange=onSell;$('#slib').onchange=onSell;
-$('#ssave').onclick=async()=>{const id=$('#ssel').value;if(!id||!$('#sp').value){$('#smsg').textContent='Pick a card and enter the sale price.';return}
+$('#ssel').onchange=()=>{if($('#ssel').value==='__all'){sellMatch=null;renderSell();$('#smsg').textContent='Pick the card below.'}};
+function renderSell(){const st=cards.filter(c=>c.status==='inventory'),keep=$('#ssel').value,
+    n={};st.forEach(c=>n[c.cert]=(n[c.cert]||0)+1),
+    opt=c=>`<option value="${esc(c.id)}">${esc(c.grader)} ${esc(c.grade)} – ${esc(c.name)} (#${esc(c.cert)})${n[c.cert]>1?` · bought ${esc(c.bought_on||'?')} for ${money(c.cost)}`:''}</option>`;
+  const list=sellMatch?st.filter(c=>sellMatch.some(m=>m.id===c.id)):st;
+  $('#ssel').innerHTML=sellMatch?'<option value="">Pick which one…</option>'+list.map(opt).join('')+'<option value="__all">Show all in-stock cards</option>'
+    :st.map(opt).join('')||'<option value="">No cards in inventory</option>';
+  if([...$('#ssel').options].some(o=>o.value===keep&&keep!=='__all'))$('#ssel').value=keep}
+$('#ssave').onclick=async()=>{const id=$('#ssel').value;if(!id||id==='__all'||!$('#sp').value){$('#smsg').textContent='Pick a card and enter the sale price.';return}
   const{error}=await sb.from('cards').update({status:'sold',sold_for:+$('#sp').value||0,sell_fees:+$('#sf').value||0,sold_on:$('#sd').value}).eq('id',id);
   if(error){$('#smsg').textContent='Save failed: '+error.message;return}
-  $('#sp').value='';$('#sf').value='';$('#scam').value='';$('#slib').value='';$('#smsg').textContent='Marked as sold.';load()};
+  $('#sp').value='';$('#sf').value='';$('#scam').value='';$('#slib').value='';sellMatch=null;$('#smsg').textContent='Marked as sold.';load()};
 
 async function load(){const{data}=await sb.from('cards').select('*').order('created_at',{ascending:false});cards=data||[];
   const paths=cards.map(c=>c.photo).filter(p=>p&&!urls[p]);
   if(paths.length){const{data:sg}=await sb.storage.from('slabs').createSignedUrls(paths,86400);(sg||[]).forEach(x=>{if(x.signedUrl)urls[x.path]=x.signedUrl})}
   render()}
-function render(){const sold=cards.filter(c=>c.status==='sold'),st=cards.filter(c=>c.status==='inventory'),keep=$('#ssel').value;
+function render(){const sold=cards.filter(c=>c.status==='sold'),st=cards.filter(c=>c.status==='inventory');
   $('#stats').innerHTML=`In stock ${st.length} · ${money(st.reduce((a,c)=>a+c.cost+c.buy_fees,0))}<br>Sold ${sold.length} · ${money(sold.reduce((a,c)=>a+c.sold_for,0))}<br>Net profit <b class="${sold.reduce((a,c)=>a+profit(c),0)>=0?'pos':'neg'}">${money(sold.reduce((a,c)=>a+profit(c),0))}</b>`;
   $('#list').innerHTML=cards.map(c=>`<div class="item card" data-id="${esc(c.id)}">${urls[c.photo]?`<img class="thumb" src="${esc(urls[c.photo])}" alt="">`:'<div class="thumb"></div>'}<div class="info"><b>${esc(c.grader)} ${esc(c.grade)} – ${esc(c.name)}</b><br><small>#${esc(c.cert)} · ${esc(c.set_name)}</small><br>Bought ${money(c.cost)} on ${esc(c.bought_on)}${c.status==='sold'?`<br>Sold ${money(c.sold_for)} on ${esc(c.sold_on)} · <span class="${profit(c)>=0?'pos':'neg'}">${money(profit(c))}</span>`:' · <small>in stock</small>'}</div><span class="chev">›</span></div>`).join('')||'<div class="msg">No cards yet.</div>';
-  $('#ssel').innerHTML=st.map(c=>`<option value="${esc(c.id)}">${esc(c.grader)} ${esc(c.grade)} – ${esc(c.name)} (#${esc(c.cert)})</option>`).join('')||'<option value="">No cards in inventory</option>';
-  if([...$('#ssel').options].some(o=>o.value===keep))$('#ssel').value=keep}
+  renderSell()}
 $('#csv').onclick=()=>{const h=['cert','grader','grade','name','set_name','bought_on','cost','buy_fees','status','sold_on','sold_for','sell_fees'],q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
   const rows=cards.map(c=>h.map(k=>q(c[k])).join(',')+','+q(c.status==='sold'?profit(c).toFixed(2):''));
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([[h.join(',')+',profit',...rows].join('\n')],{type:'text/csv'}));a.download='card-ledger.csv';a.click()};
