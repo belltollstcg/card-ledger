@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#2a5bd7"><link rel="manifest" href="manifest.json"><link rel="icon" href="icon.svg">
+<title>Card Ledger</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--mut:#6b6b6b;--card:#f4f4f2;--ac:#2a5bd7;--bd:#ddd;--ok:#1a7f45;--bad:#b3261e}
+@media (prefers-color-scheme:dark){:root{--bg:#161616;--fg:#eee;--mut:#9a9a9a;--card:#232323;--ac:#7aa2ff;--bd:#383838;--ok:#4cc380;--bad:#ff8a80}}
+*{box-sizing:border-box}body{margin:0 auto;background:var(--bg);color:var(--fg);font:16px/1.4 system-ui,sans-serif;max-width:560px;padding:14px}
+h1{font-size:20px}.tabs{display:flex;gap:6px;margin-bottom:12px}
+.tabs button{flex:1;padding:10px;border:1px solid var(--bd);background:var(--card);color:var(--fg);border-radius:10px;font-size:15px}
+.tabs button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+input,select{width:100%;padding:10px;margin-top:8px;border:1px solid var(--bd);border-radius:8px;background:var(--card);color:var(--fg);font-size:16px}
+.row{display:flex;gap:8px}.row>*{flex:1}
+.btn{width:100%;margin-top:12px;padding:13px;border:0;border-radius:10px;background:var(--ac);color:#fff;font-size:16px;font-weight:600}
+.btn.alt{background:var(--card);color:var(--fg);border:1px solid var(--bd)}
+.msg{font-size:14px;color:var(--mut);margin:8px 0;min-height:20px}
+.item{background:var(--card);border-radius:10px;padding:10px 12px;margin:8px 0}.item small{color:var(--mut)}
+.card{display:flex;gap:12px;align-items:center;cursor:pointer}.card .info{flex:1;min-width:0}
+.thumb{width:56px;height:84px;border-radius:6px;object-fit:cover;background:var(--bd);flex:none}
+.chev{font-size:24px;color:var(--mut)}.big{width:100%;max-height:360px;object-fit:contain;border-radius:10px;background:var(--card)}
+label{display:block;font-size:13px;color:var(--mut);margin-top:10px}label+input,label+select{margin-top:3px}
+.btn.danger{background:transparent;color:var(--bad);border:1px solid var(--bad)}
+.pos{color:var(--ok)}.neg{color:var(--bad)}[hidden]{display:none!important}
+</style></head><body>
+<h1>Card Ledger</h1>
+<section id="login"><input id="em" type="email" placeholder="Email" autocomplete="username"><input id="pw" type="password" placeholder="Password" autocomplete="current-password"><button class="btn" id="go">Sign in</button><div class="msg" id="lmsg"></div></section>
+<main id="app" hidden>
+<div class="tabs"><button data-t="buy" class="on">Buy</button><button data-t="sell">Sell</button><button data-t="inv">Inventory</button></div>
+<section id="buy">
+ <div class="row"><button class="btn alt" data-pick="bcam">📷 Take photo</button><button class="btn alt" data-pick="blib">🖼️ Choose photo</button></div>
+ <input id="bcam" type="file" accept="image/*" capture="environment" hidden><input id="blib" type="file" accept="image/*" hidden>
+ <div class="msg" id="bmsg">Photo the slab to fill in the details.</div>
+ <div class="row"><input id="bg" placeholder="Grader"><input id="bgr" placeholder="Grade"></div>
+ <input id="bc" placeholder="Cert number" inputmode="numeric"><input id="bn" placeholder="Card name"><input id="bs" placeholder="Set / year">
+ <div class="row"><input id="bp" type="number" step="0.01" placeholder="Price paid $" inputmode="decimal"><input id="bf" type="number" step="0.01" placeholder="Fees $" inputmode="decimal"></div>
+ <input id="bd" type="date"><button class="btn" id="bsave">Save to inventory</button>
+</section>
+<section id="sell" hidden>
+ <div class="row"><button class="btn alt" data-pick="scam">📷 Take photo</button><button class="btn alt" data-pick="slib">🖼️ Choose photo</button></div>
+ <input id="scam" type="file" accept="image/*" capture="environment" hidden><input id="slib" type="file" accept="image/*" hidden>
+ <div class="msg" id="smsg">Photo the slab to find it, or pick it below.</div>
+ <select id="ssel"></select>
+ <div class="row"><input id="sp" type="number" step="0.01" placeholder="Sold for $" inputmode="decimal"><input id="sf" type="number" step="0.01" placeholder="Fees $" inputmode="decimal"></div>
+ <input id="sd" type="date"><button class="btn" id="ssave">Mark as sold</button>
+</section>
+<section id="inv" hidden><div id="stats" class="item"></div><div id="list"></div><button class="btn alt" id="csv">Export CSV</button><button class="btn alt" id="out">Sign out</button></section>
+<section id="edit" hidden>
+ <img id="eimg" class="big" alt="" hidden>
+ <div class="row"><div><label>Grader</label><input id="eg"></div><div><label>Grade</label><input id="egr"></div></div>
+ <label>Cert number</label><input id="ec" inputmode="numeric">
+ <label>Card name</label><input id="en"><label>Set / year</label><input id="es">
+ <div class="row"><div><label>Price paid $</label><input id="ep" type="number" step="0.01" inputmode="decimal"></div><div><label>Buy fees $</label><input id="ef" type="number" step="0.01" inputmode="decimal"></div></div>
+ <label>Date bought</label><input id="ed" type="date">
+ <label>Status</label><select id="est"><option value="inventory">In stock</option><option value="sold">Sold</option></select>
+ <div id="esold"><div class="row"><div><label>Sold for $</label><input id="esp" type="number" step="0.01" inputmode="decimal"></div><div><label>Sell fees $</label><input id="esf" type="number" step="0.01" inputmode="decimal"></div></div>
+ <label>Date sold</label><input id="esd" type="date"></div>
+ <div class="msg" id="emsg"></div>
+ <button class="btn" id="esave">Save changes</button><button class="btn alt" id="ecancel">Cancel</button><button class="btn danger" id="edel">Delete card</button>
+</section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.js"></script>
+<script>
+// Paste from Supabase: Project Settings > API
+const SUPABASE_URL='https://drqialhskknzigrkquli.supabase.co', SUPABASE_KEY='sb_publishable_SCAc5QwrIRwUITNx1Ha9Kw_EDY_iE_X';
+const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const money=n=>'$'+(Number(n)||0).toFixed(2),today=()=>new Date().toISOString().slice(0,10);
+const profit=c=>(c.sold_for||0)-(c.sell_fees||0)-(c.cost||0)-(c.buy_fees||0);
+let cards=[],bblob=null;$('#bd').value=today();$('#sd').value=today();
+
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));
+  ['buy','sell','inv'].forEach(t=>$('#'+t).hidden=t!==b.dataset.t)});
+document.querySelectorAll('[data-pick]').forEach(b=>b.onclick=()=>$('#'+b.dataset.pick).click());
+
+$('#go').onclick=async()=>{const{error}=await sb.auth.signInWithPassword({email:$('#em').value,password:$('#pw').value});if(error)$('#lmsg').textContent=error.message};
+$('#out').onclick=()=>sb.auth.signOut();
+sb.auth.onAuthStateChange((_e,s)=>{$('#login').hidden=!!s;$('#app').hidden=!s;if(s)load()});
+sb.auth.getSession().then(({data})=>{if(data.session){$('#login').hidden=true;$('#app').hidden=false;load()}});
+
+async function shrink(file){const img=await createImageBitmap(file),k=Math.min(1,1280/Math.max(img.width,img.height));
+  const c=document.createElement('canvas');c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);
+  c.getContext('2d').drawImage(img,0,0,c.width,c.height);return new Promise(r=>c.toBlob(r,'image/jpeg',.85))}
+const b64=blob=>new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result.split(',')[1]);f.readAsDataURL(blob)});
+async function readSlab(blob){const{data,error}=await sb.functions.invoke('read-slab',{body:{image:await b64(blob)}});if(error)throw error;return data||{}}
+
+async function onBuy(e){const f=e.target.files[0];if(!f)return;bblob=await shrink(f);$('#bmsg').textContent='Reading slab…';
+  try{const d=await readSlab(bblob);$('#bg').value=d.grader||'';$('#bgr').value=d.grade||'';$('#bc').value=d.cert||'';$('#bn').value=d.name||'';$('#bs').value=d.set||'';$('#bmsg').textContent='Check details, add price paid.'}
+  catch{$('#bmsg').textContent='Could not read photo. Enter by hand.'}}
+$('#bcam').onchange=onBuy;$('#blib').onchange=onBuy;
+
+$('#bsave').onclick=async()=>{const cert=$('#bc').value.trim();
+  if(!cert||!$('#bp').value){$('#bmsg').textContent='Cert number and price paid are required.';return}
+  let photo=null;
+  if(bblob){const u=(await sb.auth.getUser()).data.user,path=u.id+'/'+Date.now()+'.jpg';
+    const up=await sb.storage.from('slabs').upload(path,bblob,{contentType:'image/jpeg'});if(!up.error)photo=path}
+  const{error}=await sb.from('cards').insert({cert,grader:$('#bg').value.trim(),grade:$('#bgr').value.trim(),name:$('#bn').value.trim(),set_name:$('#bs').value.trim(),
+    cost:+$('#bp').value||0,buy_fees:+$('#bf').value||0,bought_on:$('#bd').value,photo});
+  if(error){$('#bmsg').textContent='Save failed: '+error.message;return}
+  ['bg','bgr','bc','bn','bs','bp','bf','bcam','blib'].forEach(i=>$('#'+i).value='');bblob=null;$('#bmsg').textContent='Saved. Ready for the next card.';load()};
+
+async function onSell(e){const f=e.target.files[0];if(!f)return;$('#smsg').textContent='Reading slab…';
+  try{const d=await readSlab(await shrink(f)),m=cards.find(c=>c.status==='inventory'&&String(c.cert)===String(d.cert).trim());
+    if(m){$('#ssel').value=m.id;$('#smsg').textContent='Matched: '+m.name+'. Enter the sale price.'}else $('#smsg').textContent='No match for cert '+(d.cert||'?')+'. Pick it below.'}
+  catch{$('#smsg').textContent='Could not read photo. Pick the card below.'}}
+$('#scam').onchange=onSell;$('#slib').onchange=onSell;
+$('#ssave').onclick=async()=>{const id=$('#ssel').value;if(!id||!$('#sp').value){$('#smsg').textContent='Pick a card and enter the sale price.';return}
+  const{error}=await sb.from('cards').update({status:'sold',sold_for:+$('#sp').value||0,sell_fees:+$('#sf').value||0,sold_on:$('#sd').value}).eq('id',id);
+  if(error){$('#smsg').textContent='Save failed: '+error.message;return}
+  $('#sp').value='';$('#sf').value='';$('#scam').value='';$('#slib').value='';$('#smsg').textContent='Marked as sold.';load()};
+
+async function load(){const{data}=await sb.from('cards').select('*').order('created_at',{ascending:false});cards=data||[];
+  const paths=cards.map(c=>c.photo).filter(p=>p&&!urls[p]);
+  if(paths.length){const{data:sg}=await sb.storage.from('slabs').createSignedUrls(paths,86400);(sg||[]).forEach(x=>{if(x.signedUrl)urls[x.path]=x.signedUrl})}
+  render()}
+function render(){const sold=cards.filter(c=>c.status==='sold'),st=cards.filter(c=>c.status==='inventory'),keep=$('#ssel').value;
+  $('#stats').innerHTML=`In stock ${st.length} · ${money(st.reduce((a,c)=>a+c.cost+c.buy_fees,0))}<br>Sold ${sold.length} · ${money(sold.reduce((a,c)=>a+c.sold_for,0))}<br>Net profit <b class="${sold.reduce((a,c)=>a+profit(c),0)>=0?'pos':'neg'}">${money(sold.reduce((a,c)=>a+profit(c),0))}</b>`;
+  $('#list').innerHTML=cards.map(c=>`<div class="item card" data-id="${esc(c.id)}">${urls[c.photo]?`<img class="thumb" src="${esc(urls[c.photo])}" alt="">`:'<div class="thumb"></div>'}<div class="info"><b>${esc(c.grader)} ${esc(c.grade)} – ${esc(c.name)}</b><br><small>#${esc(c.cert)} · ${esc(c.set_name)}</small><br>Bought ${money(c.cost)} on ${esc(c.bought_on)}${c.status==='sold'?`<br>Sold ${money(c.sold_for)} on ${esc(c.sold_on)} · <span class="${profit(c)>=0?'pos':'neg'}">${money(profit(c))}</span>`:' · <small>in stock</small>'}</div><span class="chev">›</span></div>`).join('')||'<div class="msg">No cards yet.</div>';
+  $('#ssel').innerHTML=st.map(c=>`<option value="${esc(c.id)}">${esc(c.grader)} ${esc(c.grade)} – ${esc(c.name)} (#${esc(c.cert)})</option>`).join('')||'<option value="">No cards in inventory</option>';
+  if([...$('#ssel').options].some(o=>o.value===keep))$('#ssel').value=keep}
+$('#csv').onclick=()=>{const h=['cert','grader','grade','name','set_name','bought_on','cost','buy_fees','status','sold_on','sold_for','sell_fees'],q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
+  const rows=cards.map(c=>h.map(k=>q(c[k])).join(',')+','+q(c.status==='sold'?profit(c).toFixed(2):''));
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([[h.join(',')+',profit',...rows].join('\n')],{type:'text/csv'}));a.download='card-ledger.csv';a.click()};
+
+let urls={},editing=null;
+$('#list').onclick=e=>{const el=e.target.closest('[data-id]');if(el)openEdit(el.dataset.id)};
+function openEdit(id){const c=cards.find(x=>x.id===id);if(!c)return;editing=c;
+  const v={eg:c.grader,egr:c.grade,ec:c.cert,en:c.name,es:c.set_name,ep:c.cost,ef:c.buy_fees,ed:c.bought_on,est:c.status,esp:c.sold_for,esf:c.sell_fees,esd:c.sold_on||today()};
+  Object.entries(v).forEach(([k,x])=>$('#'+k).value=x??'');
+  const u=urls[c.photo];$('#eimg').hidden=!u;if(u)$('#eimg').src=u;
+  $('#esold').hidden=c.status!=='sold';$('#emsg').textContent='';
+  ['buy','sell','inv'].forEach(t=>$('#'+t).hidden=true);$('.tabs').hidden=true;$('#edit').hidden=false;scrollTo(0,0)}
+function closeEdit(){editing=null;$('#edit').hidden=true;$('.tabs').hidden=false;$('#inv').hidden=false}
+$('#est').onchange=()=>$('#esold').hidden=$('#est').value!=='sold';
+$('#ecancel').onclick=closeEdit;
+$('#esave').onclick=async()=>{const cert=$('#ec').value.trim(),sold=$('#est').value==='sold';
+  if(!cert){$('#emsg').textContent='Cert number is required.';return}
+  if(sold&&!$('#esp').value){$('#emsg').textContent='Enter the sale price.';return}
+  const{error}=await sb.from('cards').update({cert,grader:$('#eg').value.trim(),grade:$('#egr').value.trim(),name:$('#en').value.trim(),set_name:$('#es').value.trim(),
+    cost:+$('#ep').value||0,buy_fees:+$('#ef').value||0,bought_on:$('#ed').value||null,status:$('#est').value,
+    sold_for:sold?(+$('#esp').value||0):null,sell_fees:sold?(+$('#esf').value||0):0,sold_on:sold?($('#esd').value||null):null}).eq('id',editing.id);
+  if(error){$('#emsg').textContent='Save failed: '+error.message;return}
+  closeEdit();load()};
+$('#edel').onclick=async()=>{if(!confirm('Delete this card permanently?'))return;
+  if(editing.photo)await sb.storage.from('slabs').remove([editing.photo]);
+  const{error}=await sb.from('cards').delete().eq('id',editing.id);
+  if(error){$('#emsg').textContent='Delete failed: '+error.message;return}
+  closeEdit();load()};
+</script></body></html>
