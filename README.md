@@ -14,7 +14,7 @@ The app is a single static page hosted on **GitHub Pages**. **Supabase** handles
   3. **Cards coming in**: take or choose a photo of each slab (read by `read-slab`) or add one by hand, check the fields, and enter a trade value for each. Optional counterparty and notes.
 
   A balance check compares (values out + cash paid) with (values in + cash received). It warns when they differ but still lets you save. The whole trade is saved in one transaction by the `record_trade` database function (see below).
-- **Inventory**: a list of every card with its slab thumbnail. Traded-away cards show "Traded on <date>" and traded-in cards show "From trade on <date>". Tapping either opens the full trade: cards out, cards in, cash, and both cost bases. A **Trades** list below the cards shows every trade. Totals cover cards in stock and their basis, cards sold and revenue, cards traded away, and net profit.
+- **Inventory**: a list of every card with its slab thumbnail. Traded-away cards show "Traded on <date>" and traded-in cards show "From trade on <date>". Tapping either opens the full trade: cards out, cards in, cash, and both cost bases. A **Trades** list below the cards shows every trade. **Delete trade** on a trade's screen undoes it: cards you traded away go back to in stock, and the cards you received are deleted with their photos. It's refused if a received card has since been sold or traded again; undo that first. Totals cover cards in stock and their basis, cards sold and revenue, cards traded away, and net profit.
 - **Profit views**: a toggle at the top of Inventory.
   - **My view** (carryover): profit counts only when a card is sold for cash. Cards you trade for carry over the cost of what you gave up.
   - **Tax view** (market value): a trade counts as selling the outgoing cards and buying the incoming ones at their trade values on the trade date. A sale's profit uses the card's market-value basis.
@@ -42,6 +42,7 @@ The app is a single static page hosted on **GitHub Pages**. **Supabase** handles
 | `manifest.json` | Web app manifest for installing to the home screen |
 | `icon.svg` | App icon |
 | `supabase/record_trade.sql` | The `record_trade` database function that saves a trade in one transaction |
+| `supabase/delete_trade.sql` | The `delete_trade` database function that undoes a trade in one transaction |
 
 The app has no build step and no dependencies to install.
 
@@ -99,6 +100,8 @@ Use the same Row Level Security policies as `cards`.
 `trades` has `trade_date`, `cash_paid`, `cash_received`, `counterparty`, `notes` and `carryover_gain`. `cards` gains `acquired_via` (`purchase` or `trade`), `acquired_trade_id`, `disposed_trade_id`, `trade_value_in`, `trade_value_out`, `fmv_basis` and `trade_gain`, and its status can be `traded`.
 
 Run `supabase/record_trade.sql` once in the Supabase SQL Editor. It adds `trades.carryover_gain` if it's missing and creates `record_trade(p jsonb)`, which the app calls with `supabase.rpc`. The function runs as the signed-in user, so Row Level Security still applies. It checks that every outgoing card is still in stock, then saves the trade and updates every card. If anything fails, nothing is saved. Incoming slab photos are uploaded first and deleted again if the trade isn't saved.
+
+Also run `supabase/delete_trade.sql`, which creates `delete_trade(p_trade_id text)`. It restores the outgoing cards to in stock (clearing their trade fields), deletes the incoming cards and the trade, and returns the incoming cards' photo paths so the app can remove them from storage. It refuses if any incoming card has been sold or traded since.
 
 ### Storage: `slabs` and `receipts` buckets
 

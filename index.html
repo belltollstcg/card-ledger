@@ -81,7 +81,8 @@ h3{font-size:16px;margin:18px 0 4px}
  <div class="row"><button class="btn alt" id="tback">Back</button><button class="btn" id="tnext">Next</button></div>
  <button class="btn alt" id="tcancel">Cancel trade</button>
 </section>
-<section id="tview" hidden><div id="tvbody"></div><button class="btn alt" id="tvback">Back</button></section>
+<section id="tview" hidden><div id="tvbody"></div><div class="msg" id="tvmsg"></div>
+ <button class="btn alt" id="tvback">Back</button><button class="btn danger" id="tvdel">Delete trade</button></section>
 <section id="inv" hidden><div class="seg" id="pview"><button data-v="my" class="on">My view</button><button data-v="tax">Tax view</button></div>
  <div id="stats" class="item"></div><div id="list"></div>
  <h3>Trades</h3><div id="tlist"></div>
@@ -426,8 +427,19 @@ function openTrade(id){const t=tradeOf(id);if(!t)return;tvId=String(t.id);
     `<h3>Cash and totals</h3><div class="item">Cash I paid ${money(t.cash_paid)} · cash I received ${money(t.cash_received)}<br>Values out ${money(s(o,c=>c.trade_value_out))} · values in ${money(s(i,c=>c.trade_value_in))}<br>`+
     `Carryover basis (my view) <b>${money(s(i,myBasis))}</b><br>Market-value basis (tax view) <b>${money(s(i,taxBasis))}</b>`+
     `${N(t.carryover_gain)?`<br>Cash profit on this trade (my view) ${pc(N(t.carryover_gain))}`:''}<br>Gain on cards out (tax view) ${pc(s(o,tradeGainTax))}</div>`;
-  TABS.forEach(x=>$('#'+x).hidden=true);$('#edit').hidden=true;$('.tabs').hidden=true;$('#tview').hidden=false;scrollTo(0,0)}
+  $('#tvmsg').textContent='';TABS.forEach(x=>$('#'+x).hidden=true);$('#edit').hidden=true;$('.tabs').hidden=true;$('#tview').hidden=false;scrollTo(0,0)}
 $('#tvback').onclick=()=>{tvId=null;$('#tview').hidden=true;$('.tabs').hidden=false;showTab('inv')};
+// delete_trade() puts traded-away cards back in stock and deletes the cards received, all in one transaction
+$('#tvdel').onclick=async()=>{const id=tvId,o=cards.filter(c=>String(c.disposed_trade_id)===id),i=cards.filter(c=>String(c.acquired_trade_id)===id),
+    pl=(n,w)=>n+' '+w+(n===1?'':'s');
+  if(!confirm(`Delete this trade?\n\n${pl(o.length,'card')} you traded away will go back to in stock.\n${pl(i.length,'card')} you got in the trade will be deleted, with ${i.length===1?'its photo':'their photos'}.\n\nThis can't be undone.`))return;
+  const btn=$('#tvdel');btn.disabled=true;$('#tvmsg').textContent='Deleting trade…';
+  try{const{data,error}=await sb.rpc('delete_trade',{p_trade_id:id});
+    if(error){$('#tvmsg').textContent=error.code==='PGRST202'?"The delete_trade function isn't set up in Supabase yet. Run supabase/delete_trade.sql first.":error.message;return}
+    const photos=data?.photos||[];if(photos.length)await sb.storage.from('slabs').remove(photos);
+    tvId=null;$('#tview').hidden=true;$('.tabs').hidden=false;showTab('inv');await load()}
+  catch(e){$('#tvmsg').textContent='Delete failed: '+(e.message||e)}
+  finally{btn.disabled=false}};
 $('#tvbody').onclick=e=>{const el=e.target.closest('[data-tc]');if(!el)return;const c=cards.find(x=>String(x.id)===el.dataset.tc);if(!c)return;
   const other=[c.disposed_trade_id,c.acquired_trade_id].find(x=>x&&String(x)!==tvId&&tradeOf(x));
   if(other)openTrade(other);else if(c.status!=='traded'){$('#tview').hidden=true;openEdit(c.id)}};
