@@ -82,7 +82,7 @@ h3{font-size:16px;margin:18px 0 4px}
 </section>
 <section id="tview" hidden><div id="tvbody"></div><div class="msg" id="tvmsg"></div>
  <button class="btn alt" id="tvback">Back</button><button class="btn danger" id="tvdel">Delete trade</button></section>
-<section id="inv" hidden><div id="stats" class="item"></div><div id="list"></div>
+<section id="inv" hidden><div class="msg" id="invmsg" hidden></div><div id="stats" class="item"></div><div id="list"></div>
  <button class="btn alt" id="out">Sign out</button></section>
 <section id="sold" hidden><div class="seg" id="pview"><button data-v="my" class="on">My view</button><button data-v="tax">Tax view</button></div>
  <div id="sstats" class="item"></div><div id="slist"></div>
@@ -119,6 +119,12 @@ h3{font-size:16px;margin:18px 0 4px}
 </section>
 <section id="edit" hidden>
  <img id="eimg" class="big" alt="" hidden>
+ <div id="eqs" class="item" hidden><b>Sell this card</b>
+  <div class="row"><div><label>Sold for $</label><input id="qsp" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0.00"></div>
+   <div><label>Fees $</label><input id="qsf" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0.00"></div></div>
+  <label>Date sold</label><input id="qsd" type="date">
+  <div class="msg" id="qsmsg"></div>
+  <button class="btn" id="qsave">Mark as sold</button></div>
  <div class="row"><div><label>Grader</label><input id="eg"></div><div><label>Grade</label><input id="egr"></div></div>
  <label>Cert number</label><input id="ec" inputmode="numeric">
  <label>Card name</label><input id="en"><label>Set / year</label><input id="es">
@@ -280,6 +286,7 @@ function openEdit(id){const c=cards.find(x=>x.id===id);if(!c)return;editing=c;
   const u=urls[c.photo];$('#eimg').hidden=!u;if(u)$('#eimg').src=u;
   $('#esold').hidden=c.status!=='sold';$('#emsg').textContent='';
   // a traded card's status is set by its trade; undo it by deleting the trade
+  $('#eqs').hidden=c.status!=='inventory';$('#qsp').value='';$('#qsf').value='';$('#qsd').value=today();$('#qsmsg').textContent='';$('#invmsg').hidden=true;
   const traded=c.status==='traded';$('#est').disabled=traded;$('#edel').hidden=traded;$('#etnote').hidden=!traded;
   if(traded)$('#etnote').textContent=`Traded on ${tradeDate(c.disposed_trade_id)}. To put it back in stock, delete that trade.`;
   $('#etin').hidden=!(c.acquired_trade_id&&tradeOf(c.acquired_trade_id));$('#etout').hidden=!(c.disposed_trade_id&&tradeOf(c.disposed_trade_id));
@@ -289,14 +296,26 @@ $('#etin').onclick=()=>{const id=editing.acquired_trade_id;closeEdit();openTrade
 $('#etout').onclick=()=>{const id=editing.disposed_trade_id;closeEdit();openTrade(id)};
 $('#est').onchange=()=>$('#esold').hidden=$('#est').value!=='sold';
 $('#ecancel').onclick=closeEdit;
-$('#esave').onclick=async()=>{const cert=$('#ec').value.trim(),sold=$('#est').value==='sold';
-  if(!cert){$('#emsg').textContent='Cert number is required.';return}
-  if(sold&&!$('#esp').value){$('#emsg').textContent='Enter the sale price.';return}
+// saves everything on the edit screen; returns true on success (say = where to show problems)
+async function saveEdit(say){const cert=$('#ec').value.trim(),sold=$('#est').value==='sold';
+  if(!cert){say('Cert number is required.');return false}
+  if(sold&&!$('#esp').value){say('Enter the sale price.');return false}
   const{error}=await sb.from('cards').update({cert,grader:$('#eg').value.trim(),grade:$('#egr').value.trim(),name:$('#en').value.trim(),set_name:$('#es').value.trim(),
     cost:+$('#ep').value||0,buy_fees:+$('#ef').value||0,bought_on:$('#ed').value||null,status:editing.status==='traded'?'traded':$('#est').value,
     sold_for:sold?(+$('#esp').value||0):null,sell_fees:sold?(+$('#esf').value||0):0,sold_on:sold?($('#esd').value||null):null}).eq('id',editing.id);
-  if(error){$('#emsg').textContent='Save failed: '+error.message;return}
-  closeEdit();load()};
+  if(error){say('Save failed: '+error.message);return false}
+  return true}
+$('#esave').onclick=async()=>{if(await saveEdit(t=>$('#emsg').textContent=t)){closeEdit();load()}};
+// quick sell from Inventory: fills the sold fields, saves the whole form, and the card moves to Sold
+$('#qsave').onclick=async()=>{const say=t=>$('#qsmsg').textContent=t,price=$('#qsp').value;
+  if(price===''||+price<0){say('Enter the price it sold for.');return}if(!$('#qsd').value){say('Enter the date sold.');return}
+  $('#est').value='sold';$('#esp').value=price;$('#esf').value=$('#qsf').value;$('#esd').value=$('#qsd').value;
+  const btn=$('#qsave');btn.disabled=true;say('Saving…');
+  try{const c={...editing,grader:$('#eg').value.trim(),grade:$('#egr').value.trim(),name:$('#en').value.trim(),cost:+$('#ep').value||0,buy_fees:+$('#ef').value||0,sold_for:+price,sell_fees:+$('#qsf').value||0};
+    if(!await saveEdit(say)){$('#est').value=editing.status;$('#esold').hidden=true;return}
+    closeEdit();$('#invmsg').hidden=false;
+    $('#invmsg').innerHTML=`Marked <b>${cardTitle(c)}</b> as sold for ${money(c.sold_for)} · profit ${pc(profit(c))}. It's now on the Sold tab.`;load()}
+  finally{btn.disabled=false}};
 $('#edel').onclick=async()=>{if(!confirm('Delete this card permanently?'))return;
   if(editing.photo)await sb.storage.from('slabs').remove([editing.photo]);
   const{error}=await sb.from('cards').delete().eq('id',editing.id);
