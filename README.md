@@ -8,15 +8,31 @@ The app is a single static page hosted on **GitHub Pages**. **Supabase** handles
 
 - **Buy**: take a photo of a slab or pick one from your library. The `read-slab` function fills in grader, grade, cert number, card name and set. Then you add the price paid, fees and date, and save the card to inventory. The photo goes to storage with the card.
 - **Sell**: photograph the slab to find the matching in-stock card by cert number, or pick it from a list. Enter the sale price, fees and date, and mark it sold.
-- **Inventory**: a list of every card with its slab thumbnail, plus totals: the number of cards in stock and what they cost, the number sold and the revenue from them, and net profit.
+- **Trade**: tap **Trade cards instead** on the Sell tab for a 3-step flow:
+  1. **Cards going out**: scan each slab to match an in-stock card by cert, or pick it from the list, and enter a trade value for each.
+  2. **Cash**: trade date, cash you paid and cash you received.
+  3. **Cards coming in**: take or choose a photo of each slab (read by `read-slab`) or add one by hand, check the fields, and enter a trade value for each. Optional counterparty and notes.
+
+  A balance check compares (values out + cash paid) with (values in + cash received). It warns when they differ but still lets you save. The whole trade is saved in one transaction by the `record_trade` database function (see below).
+- **Inventory**: a list of every card with its slab thumbnail. Traded-away cards show "Traded on <date>" and traded-in cards show "From trade on <date>". Tapping either opens the full trade: cards out, cards in, cash, and both cost bases. A **Trades** list below the cards shows every trade. Totals cover cards in stock and their basis, cards sold and revenue, cards traded away, and net profit.
+- **Profit views**: a toggle at the top of Inventory.
+  - **My view** (carryover): profit counts only when a card is sold for cash. Cards you trade for carry over the cost of what you gave up.
+  - **Tax view** (market value): a trade counts as selling the outgoing cards and buying the incoming ones at their trade values on the trade date. A sale's profit uses the card's market-value basis.
+
+  Purchased cards use cost + fees in both views.
 - **Look up**: photograph a slab, or open a card from Inventory and tap **Look up**, to check prices. The search text is built from name, set, grader and grade. It links to eBay sold and active listings, Card Ladder and ALT, with a "Copy search text" button for pasting into an app. A cert page link (PSA, CGC or Beckett) appears when the grader is recognised. Look-ups aren't saved.
 - **Edit / delete**: tap a card to fix any field, change its status, or delete it along with its photo.
 - **Expenses**: photograph a receipt and the `read-receipt` function fills in vendor, date, time, amount, tax, category, payment method and a summary for the notes. Check the fields and save; the receipt photo is stored with the expense. The list below shows each expense with its receipt thumbnail. Tap one to edit or delete it (deleting also removes the photo). A year filter (default: this year) shows the year's total and a total per category, and **Export expenses CSV** downloads that year.
-- **CSV export**: download the whole ledger, including profit per sold card.
-- **Backup**: **Backup everything (zip)** on the Inventory tab downloads `card-ledger-backup-YYYY-MM-DD.zip` with `cards.csv`, `expenses.csv`, and every photo in `slab-photos/` and `receipt-photos/`. Photos are named by date plus cert or vendor (e.g. `2026-01-01_PSA-10_Charizard_12345678.jpg`, `2026-03-15_Staples_45.10.jpg`), and each CSV has a `photo_file` column pointing to its photo. Any photo that can't be downloaded is listed in `missing-photos.txt`.
+- **CSV export**: download the whole ledger, with the trade columns and profit in both views. **Export trades CSV** downloads every trade.
+- **Backup**: **Backup everything (zip)** on the Inventory tab downloads `card-ledger-backup-YYYY-MM-DD.zip` with `cards.csv`, `trades.csv`, `expenses.csv`, and every photo in `slab-photos/` and `receipt-photos/`. Photos are named by date plus cert or vendor (e.g. `2026-01-01_PSA-10_Charizard_12345678.jpg`, `2026-03-15_Staples_45.10.jpg`), and each CSV has a `photo_file` column pointing to its photo. Any photo that can't be downloaded is listed in `missing-photos.txt`.
 - **Installable**: a web app manifest and icon, so you can add it to your home screen.
 
-Profit for a sold card = `sold_for − sell_fees − cost − buy_fees`.
+### How trades are valued
+
+- **Carryover basis (my view)**: cost of the cards going out (cost + buy_fees) + cash paid − cash received. It's split across the incoming cards in proportion to their trade values (equally if every value is 0), rounded to cents. Each incoming card stores its share in `cost`, with `buy_fees` = 0. If the total would go below zero, the incoming cards get 0 and the excess is recorded as profit on the trade (`trades.carryover_gain`).
+- **Market-value basis (tax view)**: each incoming card's trade value, stored in `fmv_basis`.
+- **Outgoing cards**: status `traded`, plus `disposed_trade_id`, `trade_value_out` and `trade_gain` = trade value − (cost + buy_fees). In tax view, the gain is trade value − market-value basis when the card itself came from an earlier trade.
+- **Profit on a sale**: my view = `sold_for − sell_fees − cost − buy_fees`; tax view = `sold_for − sell_fees − fmv_basis` (or cost + buy_fees when there's no `fmv_basis`).
 
 ## Files
 
@@ -25,6 +41,7 @@ Profit for a sold card = `sold_for − sell_fees − cost − buy_fees`.
 | `index.html` | The whole app: markup, styles and JavaScript (uses `@supabase/supabase-js` v2 from jsDelivr, and loads JSZip 3.10.1 from cdnjs only when you make a backup) |
 | `manifest.json` | Web app manifest for installing to the home screen |
 | `icon.svg` | App icon |
+| `supabase/record_trade.sql` | The `record_trade` database function that saves a trade in one transaction |
 
 The app has no build step and no dependencies to install.
 
@@ -76,6 +93,12 @@ Turn on **Row Level Security** and add policies so that each user can only selec
 | `created_at` | timestamptz | |
 
 Use the same Row Level Security policies as `cards`.
+
+### Database: trades
+
+`trades` has `trade_date`, `cash_paid`, `cash_received`, `counterparty`, `notes` and `carryover_gain`. `cards` gains `acquired_via` (`purchase` or `trade`), `acquired_trade_id`, `disposed_trade_id`, `trade_value_in`, `trade_value_out`, `fmv_basis` and `trade_gain`, and its status can be `traded`.
+
+Run `supabase/record_trade.sql` once in the Supabase SQL Editor. It adds `trades.carryover_gain` if it's missing and creates `record_trade(p jsonb)`, which the app calls with `supabase.rpc`. The function runs as the signed-in user, so Row Level Security still applies. It checks that every outgoing card is still in stock, then saves the trade and updates every card. If anything fails, nothing is saved. Incoming slab photos are uploaded first and deleted again if the trade isn't saved.
 
 ### Storage: `slabs` and `receipts` buckets
 
