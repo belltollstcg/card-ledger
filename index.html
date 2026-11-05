@@ -14,7 +14,6 @@ input,select,textarea{width:100%;padding:10px;margin-top:8px;border:1px solid va
 .row{display:flex;gap:8px}.row>*{flex:1}
 .btn{width:100%;margin-top:12px;padding:13px;border:0;border-radius:10px;background:var(--ac);color:#fff;font-size:16px;font-weight:600}
 .btn.alt{background:var(--card);color:var(--fg);border:1px solid var(--bd)}
-a.btn{display:block;text-align:center;text-decoration:none}
 .msg{font-size:14px;color:var(--mut);margin:8px 0;min-height:20px}
 .item{background:var(--card);border-radius:10px;padding:10px 12px;margin:8px 0}.item small{color:var(--mut)}
 .card{display:flex;gap:12px;align-items:center;cursor:pointer}.card .info{flex:1;min-width:0}
@@ -32,7 +31,7 @@ h3{font-size:16px;margin:18px 0 4px}
 <h1>Card Ledger</h1>
 <section id="login"><input id="em" type="email" placeholder="Email" autocomplete="username"><input id="pw" type="password" placeholder="Password" autocomplete="current-password"><button class="btn" id="go">Sign in</button><div class="msg" id="lmsg"></div></section>
 <main id="app" hidden>
-<div class="tabs"><button data-t="buy" class="on">Buy</button><button data-t="sell">Sell</button><button data-t="inv">Inventory</button><button data-t="look">Look up</button><button data-t="exp">Expenses</button></div>
+<div class="tabs"><button data-t="buy" class="on">Buy</button><button data-t="sell">Sell</button><button data-t="inv">Inventory</button><button data-t="sold">Sold</button><button data-t="exp">Expenses</button></div>
 <section id="buy">
  <div class="row"><button class="btn alt" data-pick="bcam">📷 Take photo</button><button class="btn alt" data-pick="blib">🖼️ Choose photo</button></div>
  <input id="bcam" type="file" accept="image/*" capture="environment" hidden><input id="blib" type="file" accept="image/*" hidden>
@@ -83,12 +82,14 @@ h3{font-size:16px;margin:18px 0 4px}
 </section>
 <section id="tview" hidden><div id="tvbody"></div><div class="msg" id="tvmsg"></div>
  <button class="btn alt" id="tvback">Back</button><button class="btn danger" id="tvdel">Delete trade</button></section>
-<section id="inv" hidden><div class="seg" id="pview"><button data-v="my" class="on">My view</button><button data-v="tax">Tax view</button></div>
- <div id="stats" class="item"></div><div id="list"></div>
- <h3>Trades</h3><div id="tlist"></div>
- <button class="btn alt" id="csv">Export CSV</button><button class="btn alt" id="tcsv">Export trades CSV</button>
- <button class="btn alt" id="backup">Backup everything (zip)</button><div class="msg" id="bkmsg"></div>
+<section id="inv" hidden><div id="stats" class="item"></div><div id="list"></div>
  <button class="btn alt" id="out">Sign out</button></section>
+<section id="sold" hidden><div class="seg" id="pview"><button data-v="my" class="on">My view</button><button data-v="tax">Tax view</button></div>
+ <div id="sstats" class="item"></div><div id="slist"></div>
+ <h3>Trades</h3><div id="tlist"></div>
+ <h3>Export and backup</h3>
+ <button class="btn alt" id="csv">Export cards CSV</button><button class="btn alt" id="tcsv">Export trades CSV</button>
+ <button class="btn alt" id="backup">Backup everything (zip)</button><div class="msg" id="bkmsg"></div></section>
 <section id="exp" hidden>
  <div class="row"><button class="btn alt" data-pick="xcam">📷 Take photo</button><button class="btn alt" data-pick="xlib">🖼️ Choose photo</button></div>
  <input id="xcam" type="file" accept="image/*" capture="environment" hidden><input id="xlib" type="file" accept="image/*" hidden>
@@ -116,21 +117,6 @@ h3{font-size:16px;margin:18px 0 4px}
  <div class="msg" id="xemsg"></div>
  <button class="btn" id="xesave">Save changes</button><button class="btn alt" id="xecancel">Cancel</button><button class="btn danger" id="xedel">Delete expense</button>
 </section>
-<section id="look" hidden>
- <div class="row"><button class="btn alt" data-pick="kcam">📷 Take photo</button><button class="btn alt" data-pick="klib">🖼️ Choose photo</button></div>
- <input id="kcam" type="file" accept="image/*" capture="environment" hidden><input id="klib" type="file" accept="image/*" hidden>
- <div class="msg" id="kmsg">Photo a slab, or type the details, to look it up.</div>
- <div class="row"><input id="kg" placeholder="Grader"><input id="kgr" placeholder="Grade"></div>
- <input id="kc" placeholder="Cert number" inputmode="numeric"><input id="kn" placeholder="Card name"><input id="ks" placeholder="Set / year">
- <div id="klinks" hidden>
-  <div class="item"><small>Search text</small><br><b id="kphrase"></b></div>
-  <a class="btn" id="ksold" target="_blank" rel="noopener">eBay sold listings</a>
-  <a class="btn" id="kact" target="_blank" rel="noopener">eBay active listings</a>
-  <div class="row"><a class="btn" id="kcl" target="_blank" rel="noopener">Card Ladder</a><button class="btn alt" data-copy>Copy search text</button></div>
-  <div class="row"><a class="btn" id="kalt" target="_blank" rel="noopener">ALT</a><button class="btn alt" data-copy>Copy search text</button></div>
- </div>
- <a class="btn alt" id="kcert" target="_blank" rel="noopener" hidden>Cert page</a>
-</section>
 <section id="edit" hidden>
  <img id="eimg" class="big" alt="" hidden>
  <div class="row"><div><label>Grader</label><input id="eg"></div><div><label>Grade</label><input id="egr"></div></div>
@@ -138,11 +124,12 @@ h3{font-size:16px;margin:18px 0 4px}
  <label>Card name</label><input id="en"><label>Set / year</label><input id="es">
  <div class="row"><div><label>Price paid $</label><input id="ep" type="number" step="0.01" inputmode="decimal"></div><div><label>Buy fees $</label><input id="ef" type="number" step="0.01" inputmode="decimal"></div></div>
  <label>Date bought</label><input id="ed" type="date">
- <label>Status</label><select id="est"><option value="inventory">In stock</option><option value="sold">Sold</option></select>
+ <label>Status</label><select id="est"><option value="inventory">In stock</option><option value="sold">Sold</option><option value="traded" hidden>Traded</option></select>
+ <div class="msg" id="etnote" hidden></div>
  <div id="esold"><div class="row"><div><label>Sold for $</label><input id="esp" type="number" step="0.01" inputmode="decimal"></div><div><label>Sell fees $</label><input id="esf" type="number" step="0.01" inputmode="decimal"></div></div>
  <label>Date sold</label><input id="esd" type="date"></div>
  <div class="msg" id="emsg"></div>
- <button class="btn" id="esave">Save changes</button><button class="btn alt" id="elook">Look up</button><button class="btn alt" id="ecancel">Cancel</button><button class="btn danger" id="edel">Delete card</button>
+ <button class="btn" id="esave">Save changes</button><button class="btn alt" id="etin" hidden>View trade it came from</button><button class="btn alt" id="etout" hidden>View trade it went out in</button><button class="btn alt" id="ecancel">Cancel</button><button class="btn danger" id="edel">Delete card</button>
 </section>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.js"></script>
@@ -157,14 +144,15 @@ const csvq=v=>'"'+String(v??'').replace(/"/g,'""')+'"',toCsv=(head,rows)=>[head.
 function dl(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),10000)}
 // My view (carryover): basis = cost + buy_fees; profit only on cash sales (plus trade carryover_gain).
 // Tax view (market value): basis = fmv_basis when set, else cost + buy_fees; trade gains count on the trade date.
-const N=v=>+v||0,myBasis=c=>N(c.cost)+N(c.buy_fees),taxBasis=c=>c.fmv_basis!=null?N(c.fmv_basis):myBasis(c);
+const N=v=>+v||0,r2=v=>Math.round(v*100)/100,myBasis=c=>N(c.cost)+N(c.buy_fees),taxBasis=c=>c.fmv_basis!=null?N(c.fmv_basis):myBasis(c);
 const profit=c=>N(c.sold_for)-N(c.sell_fees)-myBasis(c),profitTax=c=>N(c.sold_for)-N(c.sell_fees)-taxBasis(c);
 const tradeGainTax=c=>N(c.trade_value_out)-taxBasis(c);
 let cards=[],trades=[],bblob=null,pview='my';
 try{if(localStorage.getItem('pview')==='tax')pview='tax'}catch{}$('#bd').value=today();$('#sd').value=today();
 
-const TABS=['buy','sell','inv','look','exp'];
-function showTab(t){document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x.dataset.t===t));
+const TABS=['buy','sell','inv','sold','exp'];
+let curTab='buy';
+function showTab(t){curTab=t;document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x.dataset.t===t));
   TABS.forEach(x=>$('#'+x).hidden=x!==t)}
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.t));
 document.querySelectorAll('[data-pick]').forEach(b=>b.onclick=()=>$('#'+b.dataset.pick).click());
@@ -241,16 +229,29 @@ async function load(){loadExpenses();
 const tradeOf=id=>trades.find(t=>String(t.id)===String(id)),tradeDate=id=>tradeOf(id)?.trade_date||'?';
 const pc=v=>`<span class="${v>=0?'pos':'neg'}">${money(v)}</span>`,cardTitle=c=>`${esc(c.grader)} ${esc(c.grade)} – ${esc(c.name)}`;
 document.querySelectorAll('#pview button').forEach(b=>b.onclick=()=>{pview=b.dataset.v;try{localStorage.setItem('pview',pview)}catch{}render()});
+const thumbOf=c=>urls[c.photo]?`<img class="thumb" src="${esc(urls[c.photo])}" alt="">`:'<div class="thumb"></div>';
+const gotLine=c=>c.acquired_via==='trade'?`From trade on ${esc(tradeDate(c.acquired_trade_id))} · cost ${money(myBasis(c))}`:`Bought ${money(c.cost)} on ${esc(c.bought_on)}`;
+const outDate=c=>(c.status==='sold'?c.sold_on:tradeDate(c.disposed_trade_id))||'';
 function render(){const tax=pview==='tax',sold=cards.filter(c=>c.status==='sold'),st=cards.filter(c=>c.status==='inventory'),td=cards.filter(c=>c.status==='traded');
   document.querySelectorAll('#pview button').forEach(b=>b.classList.toggle('on',b.dataset.v===pview));
-  const basis=tax?taxBasis:myBasis,saleP=tax?profitTax:profit,
+  // Inventory: in-stock cards only
+  const stCost=st.reduce((a,c)=>a+myBasis(c),0),stTax=st.reduce((a,c)=>a+taxBasis(c),0);
+  $('#stats').innerHTML=`<b>In stock ${st.length}</b> · stock value ${money(stCost)} at cost`+(r2(stTax)!==r2(stCost)?`<br><small>${money(stTax)} at market-value basis (tax view)</small>`:'');
+  $('#list').innerHTML=st.map(c=>`<div class="item card" data-id="${esc(c.id)}">${thumbOf(c)}<div class="info"><b>${cardTitle(c)}</b><br><small>#${esc(c.cert)} · ${esc(c.set_name)}</small><br>${gotLine(c)}</div><span class="chev">›</span></div>`).join('')
+    ||'<div class="msg">No cards in stock.</div>';
+  // Sold: sold and traded-away cards, newest first, with totals and profit in the chosen view
+  const saleP=tax?profitTax:profit,
     tradeP=tax?td.reduce((a,c)=>a+tradeGainTax(c),0):trades.reduce((a,t)=>a+N(t.carryover_gain),0),
     net=sold.reduce((a,c)=>a+saleP(c),0)+tradeP;
-  $('#stats').innerHTML=`In stock ${st.length} · ${money(st.reduce((a,c)=>a+basis(c),0))} ${tax?'market-value':'cost'} basis<br>Sold ${sold.length} · ${money(sold.reduce((a,c)=>a+N(c.sold_for),0))}<br>Traded away ${td.length}${tax?' · gains '+pc(td.reduce((a,c)=>a+tradeGainTax(c),0)):tradeP?' · cash profit on trades '+pc(tradeP):''}<br>Net profit <b>${pc(net)}</b>`+
+  $('#sstats').innerHTML=`Sold ${sold.length} · revenue ${money(sold.reduce((a,c)=>a+N(c.sold_for),0))}<br>Traded away ${td.length} · trade value ${money(td.reduce((a,c)=>a+N(c.trade_value_out),0))}`+
+    `${tax?'<br>Trade gains '+pc(tradeP):tradeP?'<br>Cash profit on trades '+pc(tradeP):''}<br>Net profit <b>${pc(net)}</b>`+
     `<br><small>${tax?'Tax view: trades count as sales and purchases at market value on the trade date.':'My view: profit counts only when a card is sold for cash. Traded-in cards carry over the cost of what you gave up.'}</small>`;
-  $('#list').innerHTML=cards.map(c=>{const got=c.acquired_via==='trade'?`From trade on ${esc(tradeDate(c.acquired_trade_id))} · basis ${money(basis(c))}`:`Bought ${money(c.cost)} on ${esc(c.bought_on)}`;
-    const now=c.status==='sold'?`<br>Sold ${money(c.sold_for)} on ${esc(c.sold_on)} · ${pc(saleP(c))}`:c.status==='traded'?`<br>Traded on ${esc(tradeDate(c.disposed_trade_id))} at ${money(c.trade_value_out)}${tax?' · '+pc(tradeGainTax(c)):''}`:' · <small>in stock</small>';
-    return`<div class="item card" data-id="${esc(c.id)}">${urls[c.photo]?`<img class="thumb" src="${esc(urls[c.photo])}" alt="">`:'<div class="thumb"></div>'}<div class="info"><b>${cardTitle(c)}</b><br><small>#${esc(c.cert)} · ${esc(c.set_name)}</small><br>${got}${now}</div><span class="chev">›</span></div>`}).join('')||'<div class="msg">No cards yet.</div>';
+  const gone=[...sold,...td].sort((a,b)=>outDate(b).localeCompare(outDate(a))||String(b.created_at).localeCompare(String(a.created_at)));
+  $('#slist').innerHTML=gone.map(c=>{const line=c.status==='sold'
+      ?`Sold ${money(c.sold_for)} on ${esc(c.sold_on)}<br>Profit ${pc(saleP(c))}`
+      :`<b>Traded</b> on ${esc(tradeDate(c.disposed_trade_id))} · trade value ${money(c.trade_value_out)}<br>`+(tax?`Profit ${pc(tradeGainTax(c))}`:`<small>No profit yet in my view: cost ${money(myBasis(c))} carries over to the cards received</small>`);
+    return`<div class="item card" data-id="${esc(c.id)}">${thumbOf(c)}<div class="info"><b>${cardTitle(c)}</b><br><small>#${esc(c.cert)} · ${esc(c.set_name)}</small><br><small>${gotLine(c)}</small><br>${line}</div><span class="chev">›</span></div>`}).join('')
+    ||'<div class="msg">No sold or traded cards yet.</div>';
   $('#tlist').innerHTML=trades.map(t=>{const o=cards.filter(c=>String(c.disposed_trade_id)===String(t.id)),i=cards.filter(c=>String(c.acquired_trade_id)===String(t.id));
     return`<div class="item card" data-tid="${esc(t.id)}"><div class="info"><b>${esc(t.trade_date)}${t.counterparty?' · '+esc(t.counterparty):''}</b><br><small>${o.length} out (${money(o.reduce((a,c)=>a+N(c.trade_value_out),0))}) → ${i.length} in (${money(i.reduce((a,c)=>a+N(c.trade_value_in),0))})${N(t.cash_paid)?' · paid '+money(t.cash_paid):''}${N(t.cash_received)?' · received '+money(t.cash_received):''}</small></div><span class="chev">›</span></div>`}).join('')||'<div class="msg">No trades yet.</div>';
   renderSell()}
@@ -270,55 +271,29 @@ $('#csv').onclick=()=>dl(new Blob([cardsCsv(cards)],{type:'text/csv'}),'card-led
 $('#tcsv').onclick=()=>dl(new Blob([tradesCsv([...trades].reverse(),cards)],{type:'text/csv'}),'card-ledger-trades.csv');
 
 let urls={},editing=null;
-// traded-away cards and traded-in cards open their trade; everything else opens the edit screen
-$('#list').onclick=e=>{const el=e.target.closest('[data-id]');if(!el)return;const c=cards.find(x=>x.id===el.dataset.id);if(!c)return;
-  const tid=c.status==='traded'&&c.disposed_trade_id?c.disposed_trade_id:c.acquired_trade_id;if(tid&&tradeOf(tid))openTrade(tid);else openEdit(c.id)};
+// Inventory and Sold both open the edit screen; it has buttons to view a card's trades
+$('#list').onclick=$('#slist').onclick=e=>{const el=e.target.closest('[data-id]');if(el)openEdit(el.dataset.id)};
 $('#tlist').onclick=e=>{const el=e.target.closest('[data-tid]');if(el)openTrade(el.dataset.tid)};
 function openEdit(id){const c=cards.find(x=>x.id===id);if(!c)return;editing=c;
   const v={eg:c.grader,egr:c.grade,ec:c.cert,en:c.name,es:c.set_name,ep:c.cost,ef:c.buy_fees,ed:c.bought_on,est:c.status,esp:c.sold_for,esf:c.sell_fees,esd:c.sold_on||today()};
   Object.entries(v).forEach(([k,x])=>$('#'+k).value=x??'');
   const u=urls[c.photo];$('#eimg').hidden=!u;if(u)$('#eimg').src=u;
   $('#esold').hidden=c.status!=='sold';$('#emsg').textContent='';
-  TABS.forEach(t=>$('#'+t).hidden=true);$('.tabs').hidden=true;$('#edit').hidden=false;scrollTo(0,0)}
-function closeEdit(){editing=null;$('#edit').hidden=true;$('.tabs').hidden=false;$('#inv').hidden=false}
+  // a traded card's status is set by its trade; undo it by deleting the trade
+  const traded=c.status==='traded';$('#est').disabled=traded;$('#edel').hidden=traded;$('#etnote').hidden=!traded;
+  if(traded)$('#etnote').textContent=`Traded on ${tradeDate(c.disposed_trade_id)}. To put it back in stock, delete that trade.`;
+  $('#etin').hidden=!(c.acquired_trade_id&&tradeOf(c.acquired_trade_id));$('#etout').hidden=!(c.disposed_trade_id&&tradeOf(c.disposed_trade_id));
+  TABS.forEach(t=>$('#'+t).hidden=true);$('#tview').hidden=true;$('.tabs').hidden=true;$('#edit').hidden=false;scrollTo(0,0)}
+function closeEdit(){editing=null;$('#edit').hidden=true;$('.tabs').hidden=false;showTab(curTab)}
+$('#etin').onclick=()=>{const id=editing.acquired_trade_id;closeEdit();openTrade(id)};
+$('#etout').onclick=()=>{const id=editing.disposed_trade_id;closeEdit();openTrade(id)};
 $('#est').onchange=()=>$('#esold').hidden=$('#est').value!=='sold';
 $('#ecancel').onclick=closeEdit;
-$('#elook').onclick=()=>{const c=editing;closeEdit();fillLook({grader:c.grader,grade:c.grade,cert:c.cert,name:c.name,set:c.set_name});
-  $('#kmsg').textContent='Saved details for this card. Edit to refine the search.';showTab('look');scrollTo(0,0)};
-
-// Look up: build price-check and cert links from the slab details
-const enc=encodeURIComponent;
-const LINKS={
-  ebaySold:p=>'https://www.ebay.com/sch/i.html?_nkw='+enc(p)+'&LH_Sold=1&LH_Complete=1',
-  ebayActive:p=>'https://www.ebay.com/sch/i.html?_nkw='+enc(p),
-  cardLadder:p=>'https://www.cardladder.com/ladder?category=Pokemon&query='+enc(p),
-  alt:p=>'https://alt.xyz/browse?query='+enc(p)};
-function certLink(grader,cert){const g=grader.toUpperCase().replace(/[^A-Z]/g,''),c=enc(cert);if(!cert)return null;
-  if(g.startsWith('PSA'))return{label:'PSA cert page',url:'https://www.psacard.com/cert/'+c};
-  if(g.startsWith('CGC'))return{label:'CGC cert page',url:'https://www.cgccards.com/certlookup/'+c+'/'};
-  const t=g.startsWith('BVG')?'BVG':g.startsWith('BCCG')?'BCCG':/^(BGS|BECKETT)/.test(g)?'BGS':null;
-  return t&&{label:'Beckett cert page',url:'https://www.beckett.com/grading/card-lookup?item_id='+c+'&item_type='+t}}
-const kf={grader:'kg',grade:'kgr',cert:'kc',name:'kn',set:'ks'},kv=k=>$('#'+kf[k]).value.trim();
-function fillLook(d){Object.entries(kf).forEach(([k,id])=>$('#'+id).value=d[k]||'');updateLook()}
-function updateLook(){const p=['name','set','grader','grade'].map(kv).filter(Boolean).join(' ').replace(/\s+/g,' ');
-  $('#klinks').hidden=!p;$('#kphrase').textContent=p;
-  if(p){$('#ksold').href=LINKS.ebaySold(p);$('#kact').href=LINKS.ebayActive(p);$('#kcl').href=LINKS.cardLadder(p);$('#kalt').href=LINKS.alt(p)}
-  const cl=certLink(kv('grader'),kv('cert'));$('#kcert').hidden=!cl;if(cl){$('#kcert').href=cl.url;$('#kcert').textContent=cl.label}}
-Object.values(kf).forEach(id=>$('#'+id).oninput=updateLook);
-async function onLook(e){const f=e.target.files[0];e.target.value='';if(!f)return;$('#kmsg').textContent='Reading slab…';
-  try{fillLook(await readSlab(await shrink(f)));$('#kmsg').textContent='Check the details and fix any misreads.'}
-  catch{$('#kmsg').textContent='Could not read photo. Enter the details by hand.'}}
-$('#kcam').onchange=onLook;$('#klib').onchange=onLook;
-async function copyText(t){try{await navigator.clipboard.writeText(t);return true}catch{
-  const a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();
-  const ok=document.execCommand('copy');a.remove();return ok}}
-document.querySelectorAll('[data-copy]').forEach(b=>b.onclick=async()=>{const ok=await copyText($('#kphrase').textContent);
-  b.textContent=ok?'Copied ✓':'Copy failed';clearTimeout(b._t);b._t=setTimeout(()=>b.textContent='Copy search text',1500)});
 $('#esave').onclick=async()=>{const cert=$('#ec').value.trim(),sold=$('#est').value==='sold';
   if(!cert){$('#emsg').textContent='Cert number is required.';return}
   if(sold&&!$('#esp').value){$('#emsg').textContent='Enter the sale price.';return}
   const{error}=await sb.from('cards').update({cert,grader:$('#eg').value.trim(),grade:$('#egr').value.trim(),name:$('#en').value.trim(),set_name:$('#es').value.trim(),
-    cost:+$('#ep').value||0,buy_fees:+$('#ef').value||0,bought_on:$('#ed').value||null,status:$('#est').value,
+    cost:+$('#ep').value||0,buy_fees:+$('#ef').value||0,bought_on:$('#ed').value||null,status:editing.status==='traded'?'traded':$('#est').value,
     sold_for:sold?(+$('#esp').value||0):null,sell_fees:sold?(+$('#esf').value||0):0,sold_on:sold?($('#esd').value||null):null}).eq('id',editing.id);
   if(error){$('#emsg').textContent='Save failed: '+error.message;return}
   closeEdit();load()};
@@ -330,7 +305,7 @@ $('#edel').onclick=async()=>{if(!confirm('Delete this card permanently?'))return
 
 // ---------- Trades ----------
 let T=null,tikey=0,tvId=null;
-const tn=v=>v===''||v==null?NaN:+v,r2=v=>Math.round(v*100)/100;
+const tn=v=>v===''||v==null?NaN:+v;
 // same split as record_trade(): by trade value (equally if all 0), cents, last card takes the remainder
 function splitBasis(basis,vals){const tot=vals.reduce((a,v)=>a+v,0),n=vals.length;let left=basis;
   return vals.map((v,i)=>{const s=i===n-1?left:Math.min(r2(tot>0?basis*v/tot:basis/n),left);left=r2(left-s);return s})}
@@ -428,7 +403,7 @@ function openTrade(id){const t=tradeOf(id);if(!t)return;tvId=String(t.id);
     `Carryover basis (my view) <b>${money(s(i,myBasis))}</b><br>Market-value basis (tax view) <b>${money(s(i,taxBasis))}</b>`+
     `${N(t.carryover_gain)?`<br>Cash profit on this trade (my view) ${pc(N(t.carryover_gain))}`:''}<br>Gain on cards out (tax view) ${pc(s(o,tradeGainTax))}</div>`;
   $('#tvmsg').textContent='';TABS.forEach(x=>$('#'+x).hidden=true);$('#edit').hidden=true;$('.tabs').hidden=true;$('#tview').hidden=false;scrollTo(0,0)}
-$('#tvback').onclick=()=>{tvId=null;$('#tview').hidden=true;$('.tabs').hidden=false;showTab('inv')};
+$('#tvback').onclick=()=>{tvId=null;$('#tview').hidden=true;$('.tabs').hidden=false;showTab(curTab)};
 // delete_trade() puts traded-away cards back in stock and deletes the cards received, all in one transaction
 $('#tvdel').onclick=async()=>{const id=tvId,o=cards.filter(c=>String(c.disposed_trade_id)===id),i=cards.filter(c=>String(c.acquired_trade_id)===id),
     pl=(n,w)=>n+' '+w+(n===1?'':'s');
@@ -437,7 +412,7 @@ $('#tvdel').onclick=async()=>{const id=tvId,o=cards.filter(c=>String(c.disposed_
   try{const{data,error}=await sb.rpc('delete_trade',{p_trade_id:id});
     if(error){$('#tvmsg').textContent=error.code==='PGRST202'?"The delete_trade function isn't set up in Supabase yet. Run supabase/delete_trade.sql first.":error.message;return}
     const photos=data?.photos||[];if(photos.length)await sb.storage.from('slabs').remove(photos);
-    tvId=null;$('#tview').hidden=true;$('.tabs').hidden=false;showTab('inv');await load()}
+    tvId=null;$('#tview').hidden=true;$('.tabs').hidden=false;showTab(curTab);await load()}
   catch(e){$('#tvmsg').textContent='Delete failed: '+(e.message||e)}
   finally{btn.disabled=false}};
 $('#tvbody').onclick=e=>{const el=e.target.closest('[data-tc]');if(!el)return;const c=cards.find(x=>String(x.id)===el.dataset.tc);if(!c)return;
