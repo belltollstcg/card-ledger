@@ -23,6 +23,10 @@ a.btn{display:block;text-align:center;text-decoration:none}
 label{display:block;font-size:13px;color:var(--mut);margin-top:10px}label+input,label+select,label+textarea{margin-top:3px}
 .btn.danger{background:transparent;color:var(--bad);border:1px solid var(--bad)}
 .warn{border:1px solid var(--bad);margin-top:12px}.warn .dup{border-top:1px solid var(--bd);padding:8px 0;font-size:15px}.warn .dup:first-child{margin-top:8px}
+.seg{display:flex;gap:6px;margin-bottom:8px}.seg button{flex:1;padding:8px 4px;border:1px solid var(--bd);background:var(--card);color:var(--fg);border-radius:10px;font-size:14px}
+.seg button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+.row>.narrow{flex:0 0 auto;width:auto;padding:10px 16px;margin-top:8px}
+h3{font-size:16px;margin:18px 0 4px}
 .pos{color:var(--ok)}.neg{color:var(--bad)}[hidden]{display:none!important}
 </style></head><body>
 <h1>Card Ledger</h1>
@@ -47,8 +51,41 @@ label{display:block;font-size:13px;color:var(--mut);margin-top:10px}label+input,
  <select id="ssel"></select>
  <div class="row"><input id="sp" type="number" step="0.01" placeholder="Sold for $" inputmode="decimal"><input id="sf" type="number" step="0.01" placeholder="Fees $" inputmode="decimal"></div>
  <input id="sd" type="date"><button class="btn" id="ssave">Mark as sold</button>
+ <button class="btn alt" id="tstart">⇄ Trade cards instead</button>
 </section>
-<section id="inv" hidden><div id="stats" class="item"></div><div id="list"></div><button class="btn alt" id="csv">Export CSV</button>
+<section id="trade" hidden>
+ <div class="msg"><b id="tstep"></b></div>
+ <div id="t1">
+  <div class="row"><button class="btn alt" data-pick="tocam">📷 Scan slab</button><button class="btn alt" data-pick="tolib">🖼️ Choose photo</button></div>
+  <input id="tocam" type="file" accept="image/*" capture="environment" hidden><input id="tolib" type="file" accept="image/*" hidden>
+  <div class="msg" id="tomsg">Scan each slab you're giving up, or pick it from the list.</div>
+  <div class="row"><select id="tosel"></select><button class="btn alt narrow" id="toadd">Add</button></div>
+  <div id="tolist"></div>
+ </div>
+ <div id="t2" hidden>
+  <label>Trade date</label><input id="tdate" type="date">
+  <div class="row"><div><label>Cash I paid $</label><input id="tpaid" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0.00"></div>
+   <div><label>Cash I received $</label><input id="trecv" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0.00"></div></div>
+ </div>
+ <div id="t3" hidden>
+  <div class="row"><button class="btn alt" data-pick="ticam">📷 Take photo</button><button class="btn alt" data-pick="tilib">🖼️ Choose photo</button></div>
+  <input id="ticam" type="file" accept="image/*" capture="environment" hidden><input id="tilib" type="file" accept="image/*" hidden>
+  <button class="btn alt" id="tihand">Add a card by hand</button>
+  <div class="msg" id="timsg">Add each slab you're getting. Each photo adds a new card.</div>
+  <div id="tilist"></div>
+  <label>Counterparty (optional)</label><input id="tcp">
+  <label>Notes (optional)</label><textarea id="tnotes" rows="2"></textarea>
+ </div>
+ <div id="tbal" class="item"></div>
+ <div class="msg" id="tmsg"></div>
+ <div class="row"><button class="btn alt" id="tback">Back</button><button class="btn" id="tnext">Next</button></div>
+ <button class="btn alt" id="tcancel">Cancel trade</button>
+</section>
+<section id="tview" hidden><div id="tvbody"></div><button class="btn alt" id="tvback">Back</button></section>
+<section id="inv" hidden><div class="seg" id="pview"><button data-v="my" class="on">My view</button><button data-v="tax">Tax view</button></div>
+ <div id="stats" class="item"></div><div id="list"></div>
+ <h3>Trades</h3><div id="tlist"></div>
+ <button class="btn alt" id="csv">Export CSV</button><button class="btn alt" id="tcsv">Export trades CSV</button>
  <button class="btn alt" id="backup">Backup everything (zip)</button><div class="msg" id="bkmsg"></div>
  <button class="btn alt" id="out">Sign out</button></section>
 <section id="exp" hidden>
@@ -117,8 +154,13 @@ const pad=n=>String(n).padStart(2,'0'),ymd=d=>d.getFullYear()+'-'+pad(d.getMonth
 const money=n=>'$'+(Number(n)||0).toFixed(2),today=()=>ymd(new Date());
 const csvq=v=>'"'+String(v??'').replace(/"/g,'""')+'"',toCsv=(head,rows)=>[head.join(','),...rows.map(r=>r.map(csvq).join(','))].join('\n');
 function dl(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),10000)}
-const profit=c=>(c.sold_for||0)-(c.sell_fees||0)-(c.cost||0)-(c.buy_fees||0);
-let cards=[],bblob=null;$('#bd').value=today();$('#sd').value=today();
+// My view (carryover): basis = cost + buy_fees; profit only on cash sales (plus trade carryover_gain).
+// Tax view (market value): basis = fmv_basis when set, else cost + buy_fees; trade gains count on the trade date.
+const N=v=>+v||0,myBasis=c=>N(c.cost)+N(c.buy_fees),taxBasis=c=>c.fmv_basis!=null?N(c.fmv_basis):myBasis(c);
+const profit=c=>N(c.sold_for)-N(c.sell_fees)-myBasis(c),profitTax=c=>N(c.sold_for)-N(c.sell_fees)-taxBasis(c);
+const tradeGainTax=c=>N(c.trade_value_out)-taxBasis(c);
+let cards=[],trades=[],bblob=null,pview='my';
+try{if(localStorage.getItem('pview')==='tax')pview='tax'}catch{}$('#bd').value=today();$('#sd').value=today();
 
 const TABS=['buy','sell','inv','look','exp'];
 function showTab(t){document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x.dataset.t===t));
@@ -147,12 +189,12 @@ $('#bc').addEventListener('input',hideDup);$('#bdupcancel').onclick=()=>{hideDup
 $('#bsave').onclick=async()=>{const cert=$('#bc').value.trim();hideDup();
   if(!cert||!$('#bp').value){$('#bmsg').textContent='Cert number and price paid are required.';return}
   $('#bsave').disabled=true;$('#bmsg').textContent='Checking for this cert…';
-  const{data:dups,error}=await sb.from('cards').select('grader,grade,name,bought_on,cost,status,sold_on,sold_for').eq('cert',cert).order('bought_on');
+  const{data:dups,error}=await sb.from('cards').select('grader,grade,name,bought_on,cost,status,sold_on,sold_for,disposed_trade_id,trade_value_out').eq('cert',cert).order('bought_on');
   $('#bsave').disabled=false;
   if(error){$('#bmsg').textContent='Could not check for duplicates: '+error.message;return}
   if(!dups.length)return saveBuy(cert);
   $('#bdupmsg').textContent=dups.some(c=>c.status==='inventory')?'This cert is already in your inventory. You may have scanned it twice.':"You've owned this card before. Buying it back?";
-  $('#bduplist').innerHTML=dups.map(c=>`<div class="dup">${esc(c.grader)} ${esc(c.grade)} – ${esc(c.name)}<br><small>Bought ${esc(c.bought_on||'?')} for ${money(c.cost)} · ${c.status==='sold'?`Sold ${esc(c.sold_on||'?')} for ${money(c.sold_for)}`:'In stock'}</small></div>`).join('');
+  $('#bduplist').innerHTML=dups.map(c=>`<div class="dup">${esc(c.grader)} ${esc(c.grade)} – ${esc(c.name)}<br><small>Bought ${esc(c.bought_on||'?')} for ${money(c.cost)} · ${c.status==='sold'?`Sold ${esc(c.sold_on||'?')} for ${money(c.sold_for)}`:c.status==='traded'?`Traded ${esc(tradeDate(c.disposed_trade_id))} at ${money(c.trade_value_out)}`:'In stock'}</small></div>`).join('');
   $('#bmsg').textContent='Not saved yet. A card with cert '+cert+' already exists.';$('#bdup').hidden=false;$('#bdup').scrollIntoView({block:'nearest'})};
 $('#bdupsave').onclick=()=>{hideDup();saveBuy($('#bc').value.trim())};
 async function saveBuy(cert){$('#bsave').disabled=true;$('#bmsg').textContent='Saving…';try{await insertBuy(cert)}finally{$('#bsave').disabled=false}}
@@ -161,7 +203,7 @@ async function insertBuy(cert){
   if(bblob){const u=(await sb.auth.getUser()).data.user,path=u.id+'/'+Date.now()+'.jpg';
     const up=await sb.storage.from('slabs').upload(path,bblob,{contentType:'image/jpeg'});if(!up.error)photo=path}
   const{error}=await sb.from('cards').insert({cert,grader:$('#bg').value.trim(),grade:$('#bgr').value.trim(),name:$('#bn').value.trim(),set_name:$('#bs').value.trim(),
-    cost:+$('#bp').value||0,buy_fees:+$('#bf').value||0,bought_on:$('#bd').value,photo});
+    cost:+$('#bp').value||0,buy_fees:+$('#bf').value||0,bought_on:$('#bd').value,photo,acquired_via:'purchase'});
   if(error){$('#bmsg').textContent='Save failed: '+error.message;return}
   ['bg','bgr','bc','bn','bs','bp','bf','bcam','blib'].forEach(i=>$('#'+i).value='');bblob=null;$('#bmsg').textContent='Saved. Ready for the next card.';load()}
 
@@ -189,21 +231,48 @@ $('#ssave').onclick=async()=>{const id=$('#ssel').value;if(!id||id==='__all'||!$
   if(error){$('#smsg').textContent='Save failed: '+error.message;return}
   $('#sp').value='';$('#sf').value='';$('#scam').value='';$('#slib').value='';sellMatch=null;$('#smsg').textContent='Marked as sold.';load()};
 
-async function load(){loadExpenses();const{data}=await sb.from('cards').select('*').order('created_at',{ascending:false});cards=data||[];
+async function load(){loadExpenses();
+  const[c,t]=await Promise.all([sb.from('cards').select('*').order('created_at',{ascending:false}),sb.from('trades').select('*')]);
+  cards=c.data||[];trades=(t.data||[]).sort((a,b)=>String(b.trade_date).localeCompare(String(a.trade_date))||String(b.created_at).localeCompare(String(a.created_at)));
   const paths=cards.map(c=>c.photo).filter(p=>p&&!urls[p]);
   if(paths.length){const{data:sg}=await sb.storage.from('slabs').createSignedUrls(paths,86400);(sg||[]).forEach(x=>{if(x.signedUrl)urls[x.path]=x.signedUrl})}
   render()}
-function render(){const sold=cards.filter(c=>c.status==='sold'),st=cards.filter(c=>c.status==='inventory');
-  $('#stats').innerHTML=`In stock ${st.length} · ${money(st.reduce((a,c)=>a+c.cost+c.buy_fees,0))}<br>Sold ${sold.length} · ${money(sold.reduce((a,c)=>a+c.sold_for,0))}<br>Net profit <b class="${sold.reduce((a,c)=>a+profit(c),0)>=0?'pos':'neg'}">${money(sold.reduce((a,c)=>a+profit(c),0))}</b>`;
-  $('#list').innerHTML=cards.map(c=>`<div class="item card" data-id="${esc(c.id)}">${urls[c.photo]?`<img class="thumb" src="${esc(urls[c.photo])}" alt="">`:'<div class="thumb"></div>'}<div class="info"><b>${esc(c.grader)} ${esc(c.grade)} – ${esc(c.name)}</b><br><small>#${esc(c.cert)} · ${esc(c.set_name)}</small><br>Bought ${money(c.cost)} on ${esc(c.bought_on)}${c.status==='sold'?`<br>Sold ${money(c.sold_for)} on ${esc(c.sold_on)} · <span class="${profit(c)>=0?'pos':'neg'}">${money(profit(c))}</span>`:' · <small>in stock</small>'}</div><span class="chev">›</span></div>`).join('')||'<div class="msg">No cards yet.</div>';
+const tradeOf=id=>trades.find(t=>String(t.id)===String(id)),tradeDate=id=>tradeOf(id)?.trade_date||'?';
+const pc=v=>`<span class="${v>=0?'pos':'neg'}">${money(v)}</span>`,cardTitle=c=>`${esc(c.grader)} ${esc(c.grade)} – ${esc(c.name)}`;
+document.querySelectorAll('#pview button').forEach(b=>b.onclick=()=>{pview=b.dataset.v;try{localStorage.setItem('pview',pview)}catch{}render()});
+function render(){const tax=pview==='tax',sold=cards.filter(c=>c.status==='sold'),st=cards.filter(c=>c.status==='inventory'),td=cards.filter(c=>c.status==='traded');
+  document.querySelectorAll('#pview button').forEach(b=>b.classList.toggle('on',b.dataset.v===pview));
+  const basis=tax?taxBasis:myBasis,saleP=tax?profitTax:profit,
+    tradeP=tax?td.reduce((a,c)=>a+tradeGainTax(c),0):trades.reduce((a,t)=>a+N(t.carryover_gain),0),
+    net=sold.reduce((a,c)=>a+saleP(c),0)+tradeP;
+  $('#stats').innerHTML=`In stock ${st.length} · ${money(st.reduce((a,c)=>a+basis(c),0))} ${tax?'market-value':'cost'} basis<br>Sold ${sold.length} · ${money(sold.reduce((a,c)=>a+N(c.sold_for),0))}<br>Traded away ${td.length}${tax?' · gains '+pc(td.reduce((a,c)=>a+tradeGainTax(c),0)):tradeP?' · cash profit on trades '+pc(tradeP):''}<br>Net profit <b>${pc(net)}</b>`+
+    `<br><small>${tax?'Tax view: trades count as sales and purchases at market value on the trade date.':'My view: profit counts only when a card is sold for cash. Traded-in cards carry over the cost of what you gave up.'}</small>`;
+  $('#list').innerHTML=cards.map(c=>{const got=c.acquired_via==='trade'?`From trade on ${esc(tradeDate(c.acquired_trade_id))} · basis ${money(basis(c))}`:`Bought ${money(c.cost)} on ${esc(c.bought_on)}`;
+    const now=c.status==='sold'?`<br>Sold ${money(c.sold_for)} on ${esc(c.sold_on)} · ${pc(saleP(c))}`:c.status==='traded'?`<br>Traded on ${esc(tradeDate(c.disposed_trade_id))} at ${money(c.trade_value_out)}${tax?' · '+pc(tradeGainTax(c)):''}`:' · <small>in stock</small>';
+    return`<div class="item card" data-id="${esc(c.id)}">${urls[c.photo]?`<img class="thumb" src="${esc(urls[c.photo])}" alt="">`:'<div class="thumb"></div>'}<div class="info"><b>${cardTitle(c)}</b><br><small>#${esc(c.cert)} · ${esc(c.set_name)}</small><br>${got}${now}</div><span class="chev">›</span></div>`}).join('')||'<div class="msg">No cards yet.</div>';
+  $('#tlist').innerHTML=trades.map(t=>{const o=cards.filter(c=>String(c.disposed_trade_id)===String(t.id)),i=cards.filter(c=>String(c.acquired_trade_id)===String(t.id));
+    return`<div class="item card" data-tid="${esc(t.id)}"><div class="info"><b>${esc(t.trade_date)}${t.counterparty?' · '+esc(t.counterparty):''}</b><br><small>${o.length} out (${money(o.reduce((a,c)=>a+N(c.trade_value_out),0))}) → ${i.length} in (${money(i.reduce((a,c)=>a+N(c.trade_value_in),0))})${N(t.cash_paid)?' · paid '+money(t.cash_paid):''}${N(t.cash_received)?' · received '+money(t.cash_received):''}</small></div><span class="chev">›</span></div>`}).join('')||'<div class="msg">No trades yet.</div>';
   renderSell()}
-const CARD_COLS=['cert','grader','grade','name','set_name','bought_on','cost','buy_fees','status','sold_on','sold_for','sell_fees'];
-const cardsCsv=(list,files)=>toCsv([...CARD_COLS,'profit',...(files?['photo_file']:[])],
-  list.map(c=>[...CARD_COLS.map(k=>c[k]),c.status==='sold'?profit(c).toFixed(2):'',...(files?[files.get(c.id)||'']:[])]));
+const CARD_COLS=['cert','grader','grade','name','set_name','bought_on','cost','buy_fees','status','sold_on','sold_for','sell_fees',
+  'acquired_via','acquired_trade_id','disposed_trade_id','trade_value_in','trade_value_out','fmv_basis','trade_gain'];
+// profit = my view (cash sales only); profit_tax_view = sale profit on fmv basis, or the trade gain for traded cards
+const cardsCsv=(list,files,tl=trades)=>{const td=id=>id?(tl.find(t=>String(t.id)===String(id))?.trade_date||''):'';
+  return toCsv([...CARD_COLS,'acquired_trade_date','disposed_trade_date','profit','profit_tax_view',...(files?['photo_file']:[])],
+  list.map(c=>[...CARD_COLS.map(k=>c[k]),td(c.acquired_trade_id),td(c.disposed_trade_id),c.status==='sold'?profit(c).toFixed(2):'',
+    c.status==='sold'?profitTax(c).toFixed(2):c.status==='traded'?tradeGainTax(c).toFixed(2):'',...(files?[files.get(c.id)||'']:[])]))};
+const tradesCsv=(tl,cl)=>toCsv(['trade_id','trade_date','counterparty','cash_paid','cash_received','cards_out','value_out','cards_in','value_in',
+  'carryover_basis_in','market_value_basis_in','carryover_gain','notes'],tl.map(t=>{const o=cl.filter(c=>String(c.disposed_trade_id)===String(t.id)),
+  i=cl.filter(c=>String(c.acquired_trade_id)===String(t.id)),s=(l,f)=>l.reduce((a,c)=>a+N(f(c)),0).toFixed(2),names=l=>l.map(c=>[c.grader,c.grade,c.name,'#'+c.cert].filter(Boolean).join(' ')).join('; ');
+  return[t.id,t.trade_date,t.counterparty,t.cash_paid,t.cash_received,names(o),s(o,c=>c.trade_value_out),names(i),s(i,c=>c.trade_value_in),
+    s(i,myBasis),s(i,taxBasis),t.carryover_gain,t.notes]}));
 $('#csv').onclick=()=>dl(new Blob([cardsCsv(cards)],{type:'text/csv'}),'card-ledger.csv');
+$('#tcsv').onclick=()=>dl(new Blob([tradesCsv([...trades].reverse(),cards)],{type:'text/csv'}),'card-ledger-trades.csv');
 
 let urls={},editing=null;
-$('#list').onclick=e=>{const el=e.target.closest('[data-id]');if(el)openEdit(el.dataset.id)};
+// traded-away cards and traded-in cards open their trade; everything else opens the edit screen
+$('#list').onclick=e=>{const el=e.target.closest('[data-id]');if(!el)return;const c=cards.find(x=>x.id===el.dataset.id);if(!c)return;
+  const tid=c.status==='traded'&&c.disposed_trade_id?c.disposed_trade_id:c.acquired_trade_id;if(tid&&tradeOf(tid))openTrade(tid);else openEdit(c.id)};
+$('#tlist').onclick=e=>{const el=e.target.closest('[data-tid]');if(el)openTrade(el.dataset.tid)};
 function openEdit(id){const c=cards.find(x=>x.id===id);if(!c)return;editing=c;
   const v={eg:c.grader,egr:c.grade,ec:c.cert,en:c.name,es:c.set_name,ep:c.cost,ef:c.buy_fees,ed:c.bought_on,est:c.status,esp:c.sold_for,esf:c.sell_fees,esd:c.sold_on||today()};
   Object.entries(v).forEach(([k,x])=>$('#'+k).value=x??'');
@@ -257,6 +326,111 @@ $('#edel').onclick=async()=>{if(!confirm('Delete this card permanently?'))return
   const{error}=await sb.from('cards').delete().eq('id',editing.id);
   if(error){$('#emsg').textContent='Delete failed: '+error.message;return}
   closeEdit();load()};
+
+// ---------- Trades ----------
+let T=null,tikey=0,tvId=null;
+const tn=v=>v===''||v==null?NaN:+v,r2=v=>Math.round(v*100)/100;
+// same split as record_trade(): by trade value (equally if all 0), cents, last card takes the remainder
+function splitBasis(basis,vals){const tot=vals.reduce((a,v)=>a+v,0),n=vals.length;let left=basis;
+  return vals.map((v,i)=>{const s=i===n-1?left:Math.min(r2(tot>0?basis*v/tot:basis/n),left);left=r2(left-s);return s})}
+function tradeCalc(){const out=T.out.map(o=>({c:cards.find(c=>c.id===o.id),v:tn(o.value)})),vin=T.in.map(c=>tn(c.value)||0);
+  const vo=out.reduce((a,o)=>a+(o.v||0),0),vi=vin.reduce((a,v)=>a+v,0),paid=N($('#tpaid').value),recv=N($('#trecv').value),
+    cost=out.reduce((a,o)=>a+(o.c?myBasis(o.c):0),0);let basis=r2(cost+paid-recv),gain=0;if(basis<0){gain=-basis;basis=0}
+  return{vo,vi,paid,recv,cost,basis,gain,shares:splitBasis(basis,vin)}}
+function renderBal(){if(!T)return;const k=tradeCalc(),give=k.vo+k.paid,get=k.vi+k.recv,diff=r2(give-get);
+  $('#tbal').className='item'+(diff?' warn':'');
+  $('#tbal').innerHTML=`<b>Balance check</b><br>I give: cards ${money(k.vo)} + cash ${money(k.paid)} = <b>${money(give)}</b><br>I get: cards ${money(k.vi)} + cash ${money(k.recv)} = <b>${money(get)}</b><br>`+
+    (diff?`<span class="neg">Off by ${money(Math.abs(diff))} (${diff>0?'I give more':'I get more'}). Check the values. You can still save.</span>`:'Balanced ✓')+
+    `<br><small>Carryover basis for cards coming in: ${money(k.basis)} (cost of cards out ${money(k.cost)} + cash paid − cash received)${k.gain?`. Cash profit on this trade: ${money(k.gain)}`:''}</small>`;
+  T.in.forEach((c,i)=>{const el=$('#tib'+i);if(el)el.textContent=`My view basis ${money(k.shares[i])} · tax view basis ${isNaN(tn(c.value))?'–':money(tn(c.value))}`})}
+const STEPS=['Step 1 of 3 · Cards going out','Step 2 of 3 · Cash','Step 3 of 3 · Cards coming in'];
+function tradeStep(n){T.step=n;[1,2,3].forEach(i=>$('#t'+i).hidden=i!==n);$('#tstep').textContent=STEPS[n-1];
+  $('#tback').disabled=n===1;$('#tnext').textContent=n===3?'Save trade':'Next';$('#tmsg').textContent='';renderBal();scrollTo(0,0)}
+$('#tstart').onclick=()=>{T={out:[],in:[],step:1,match:null};$('#tdate').value=today();['tpaid','trecv','tcp','tnotes'].forEach(i=>$('#'+i).value='');
+  $('#tomsg').textContent="Scan each slab you're giving up, or pick it from the list.";$('#timsg').textContent="Add each slab you're getting. Each photo adds a new card.";
+  renderTOut();renderTIn();TABS.forEach(t=>$('#'+t).hidden=true);$('.tabs').hidden=true;$('#trade').hidden=false;tradeStep(1)};
+function closeTrade(){T.in.forEach(c=>c.url&&URL.revokeObjectURL(c.url));T=null;$('#trade').hidden=true;$('.tabs').hidden=false}
+$('#tcancel').onclick=()=>{if((T.out.length||T.in.length)&&!confirm('Discard this trade?'))return;closeTrade();showTab('sell')};
+$('#tback').onclick=()=>tradeStep(T.step-1);
+$('#tnext').onclick=()=>{const bad=checkStep(T.step);if(bad){$('#tmsg').textContent=bad;return}if(T.step<3)tradeStep(T.step+1);else saveTrade()};
+function checkStep(n){
+  if(n===1){if(!T.out.length)return"Add at least one card you're giving up.";if(T.out.some(o=>!(tn(o.value)>=0)))return'Enter a trade value for each card going out.'}
+  if(n===2){if(!$('#tdate').value)return'Enter the trade date.';if(N($('#tpaid').value)<0||N($('#trecv').value)<0)return"Cash amounts can't be negative."}
+  if(n===3){if(!T.in.length)return"Add at least one card you're getting.";if(T.in.some(c=>c.reading))return'Wait for the slab photos to finish reading.';
+    if(T.in.some(c=>!c.cert.trim()))return'Each incoming card needs a cert number.';if(T.in.some(c=>!(tn(c.value)>=0)))return'Enter a trade value for each card coming in.'}
+  return''}
+// step 1: cards going out
+function renderTSel(){const used=new Set(T.out.map(o=>o.id)),st=cards.filter(c=>c.status==='inventory'&&!used.has(c.id)),list=T.match?st.filter(c=>T.match.includes(c.id)):st;
+  $('#tosel').innerHTML=(list.length?`<option value="">${T.match?'Pick which one…':'Pick a card…'}</option>`+list.map(c=>`<option value="${esc(c.id)}">${cardTitle(c)} (#${esc(c.cert)}) · bought ${esc(c.bought_on||'?')} for ${money(c.cost)}</option>`).join('')
+    :'<option value="">No more in-stock cards</option>')+(T.match?'<option value="__all">Show all in-stock cards</option>':'')}
+$('#tosel').onchange=()=>{if($('#tosel').value==='__all'){T.match=null;renderTSel()}};
+function addOut(id){if(!id||T.out.some(o=>o.id===id))return;T.out.push({id,value:''});T.match=null;renderTOut()}
+$('#toadd').onclick=()=>{const v=$('#tosel').value;if(!v||v==='__all'){$('#tomsg').textContent='Pick a card from the list first.';return}
+  addOut(v);$('#tomsg').textContent='Added. Enter its trade value.'};
+async function onTradeOut(e){const f=e.target.files[0];e.target.value='';if(!f)return;const t=T;$('#tomsg').textContent='Reading slab…';
+  try{const d=await readSlab(await shrink(f));if(T!==t)return;const cert=String(d.cert??'').trim(),used=new Set(T.out.map(o=>o.id)),
+      ms=cert?cards.filter(c=>c.status==='inventory'&&!used.has(c.id)&&String(c.cert).trim()===cert):[];
+    if(ms.length===1){addOut(ms[0].id);$('#tomsg').textContent='Added '+ms[0].name+'. Enter its trade value.'}
+    else if(ms.length>1){T.match=ms.map(c=>c.id);renderTSel();$('#tomsg').textContent=ms.length+' in-stock cards have cert '+cert+'. Pick which one, then tap Add.'}
+    else $('#tomsg').textContent=cert&&cards.some(c=>used.has(c.id)&&String(c.cert).trim()===cert)?"That card's already in this trade.":'No in-stock card with cert '+(cert||'?')+'. Pick it from the list.'}
+  catch{if(T===t)$('#tomsg').textContent='Could not read photo. Pick the card from the list.'}}
+function renderTOut(){$('#tolist').innerHTML=T.out.map((o,i)=>{const c=cards.find(x=>x.id===o.id);
+  return`<div class="item"><b>${cardTitle(c)}</b><br><small>#${esc(c.cert)} · cost ${money(myBasis(c))}${c.fmv_basis!=null?' · tax basis '+money(c.fmv_basis):''}</small>
+   <label>Trade value $</label><div class="row"><input type="number" step="0.01" min="0" inputmode="decimal" placeholder="0.00" data-ov="${i}" value="${esc(o.value)}"><button class="btn alt narrow" data-orm="${i}">Remove</button></div></div>`}).join('');
+  renderTSel();renderBal()}
+$('#tolist').oninput=e=>{const i=e.target.dataset.ov;if(i!=null){T.out[i].value=e.target.value;renderBal()}};
+$('#tolist').onclick=e=>{const i=e.target.dataset.orm;if(i!=null){T.out.splice(+i,1);renderTOut()}};
+$('#tocam').onchange=onTradeOut;$('#tolib').onchange=onTradeOut;
+['tpaid','trecv'].forEach(id=>$('#'+id).oninput=renderBal);
+// step 3: cards coming in
+const TIF={grader:'Grader',grade:'Grade',cert:'Cert number',name:'Card name',set_name:'Set / year'};
+function newIn(){const c={key:++tikey,grader:'',grade:'',cert:'',name:'',set_name:'',value:'',blob:null,url:null,reading:false};T.in.push(c);return c}
+$('#tihand').onclick=()=>{newIn();renderTIn()};
+async function onTradeIn(e){const f=e.target.files[0];e.target.value='';if(!f)return;const t=T,c=newIn();c.reading=true;renderTIn();
+  try{c.blob=await shrink(f);c.url=URL.createObjectURL(c.blob);if(T===t)renderTIn();const d=await readSlab(c.blob);
+    Object.assign(c,{grader:d.grader||'',grade:d.grade||'',cert:String(d.cert??'').trim(),name:d.name||'',set_name:d.set||''});
+    if(T===t)$('#timsg').textContent='Check the details and enter a trade value.'}
+  catch{if(T===t)$('#timsg').textContent='Could not read that photo. Fill in the card by hand.'}
+  c.reading=false;if(T===t)renderTIn()}
+function renderTIn(){$('#tilist').innerHTML=T.in.map((c,i)=>{const f=k=>`<input data-ik="${k}" data-i="${i}" placeholder="${TIF[k]}" value="${esc(c[k])}"${k==='cert'?' inputmode="numeric"':''}>`;
+  return`<div class="item"><div class="card">${c.url?`<img class="thumb" src="${esc(c.url)}" alt="">`:'<div class="thumb"></div>'}<div class="info"><b>Card ${i+1} coming in</b>${c.reading?'<br><small>Reading slab…</small>':''}<br><small id="tib${i}"></small></div></div>
+   <div class="row">${f('grader')}${f('grade')}</div>${f('cert')}${f('name')}${f('set_name')}
+   <label>Trade value $</label><div class="row"><input type="number" step="0.01" min="0" inputmode="decimal" placeholder="0.00" data-ik="value" data-i="${i}" value="${esc(c.value)}"><button class="btn alt narrow" data-irm="${i}">Remove</button></div></div>`}).join('');
+  renderBal()}
+$('#tilist').oninput=e=>{const{ik,i}=e.target.dataset;if(ik){T.in[i][ik]=e.target.value;if(ik==='value')renderBal()}};
+$('#tilist').onclick=e=>{const i=e.target.dataset.irm;if(i!=null){const[c]=T.in.splice(+i,1);if(c.url)URL.revokeObjectURL(c.url);renderTIn()}};
+$('#ticam').onchange=onTradeIn;$('#tilib').onchange=onTradeIn;
+// save: upload incoming photos, then record_trade() does everything else in one transaction
+async function saveTrade(){const k=tradeCalc(),diff=r2(k.vo+k.paid-k.vi-k.recv);
+  if(diff&&!confirm(`This trade is off by ${money(Math.abs(diff))}. Save it anyway?`))return;
+  const btn=$('#tnext'),uploaded=[];btn.disabled=true;$('#tmsg').textContent='Saving trade…';
+  try{const u=(await sb.auth.getUser()).data.user,cin=[];
+    for(const[i,c]of T.in.entries()){let photo=null;
+      if(c.blob){const path=u.id+'/'+Date.now()+'-'+i+'.jpg',up=await sb.storage.from('slabs').upload(path,c.blob,{contentType:'image/jpeg'});if(!up.error){photo=path;uploaded.push(path)}}
+      cin.push({cert:c.cert.trim(),grader:c.grader.trim(),grade:c.grade.trim(),name:c.name.trim(),set_name:c.set_name.trim(),photo,value:tn(c.value)})}
+    const{data,error}=await sb.rpc('record_trade',{p:{trade_date:$('#tdate').value,cash_paid:k.paid,cash_received:k.recv,
+      counterparty:$('#tcp').value.trim(),notes:$('#tnotes').value.trim(),cards_out:T.out.map(o=>({id:o.id,value:tn(o.value)})),cards_in:cin}});
+    if(error){if(uploaded.length)sb.storage.from('slabs').remove(uploaded);
+      $('#tmsg').textContent=error.code==='PGRST202'?"The record_trade function isn't set up in Supabase yet. Run supabase/record_trade.sql first.":'Trade not saved: '+error.message;return}
+    closeTrade();showTab('inv');await load();if(data?.trade_id)openTrade(data.trade_id)}
+  catch(e){if(uploaded.length)sb.storage.from('slabs').remove(uploaded);$('#tmsg').textContent='Trade not saved: '+(e.message||e)}
+  finally{btn.disabled=false}}
+// trade details
+function openTrade(id){const t=tradeOf(id);if(!t)return;tvId=String(t.id);
+  const o=cards.filter(c=>String(c.disposed_trade_id)===tvId),i=cards.filter(c=>String(c.acquired_trade_id)===tvId),s=(l,f)=>l.reduce((a,c)=>a+N(f(c)),0),
+    thumb=c=>urls[c.photo]?`<img class="thumb" src="${esc(urls[c.photo])}" alt="">`:'<div class="thumb"></div>',
+    now=c=>c.status==='sold'?`Sold ${esc(c.sold_on)} for ${money(c.sold_for)}`:c.status==='traded'?`Traded on ${esc(tradeDate(c.disposed_trade_id))}`:'In stock';
+  $('#tvbody').innerHTML=`<div class="item"><b>Trade on ${esc(t.trade_date)}</b>${t.counterparty?' with '+esc(t.counterparty):''}${t.notes?`<br><small>${esc(t.notes)}</small>`:''}</div><h3>Cards out</h3>`+
+    (o.map(c=>`<div class="item card" data-tc="${esc(c.id)}">${thumb(c)}<div class="info"><b>${cardTitle(c)}</b><br><small>#${esc(c.cert)}${c.acquired_trade_id?' · from trade on '+esc(tradeDate(c.acquired_trade_id)):''}</small><br>Trade value ${money(c.trade_value_out)}<br><small>Cost ${money(myBasis(c))} · gain vs cost ${pc(N(c.trade_gain))}${c.fmv_basis!=null?` · tax view gain ${pc(tradeGainTax(c))}`:''}</small></div>${c.acquired_trade_id?'<span class="chev">›</span>':''}</div>`).join('')||'<div class="msg">None found.</div>')+
+    '<h3>Cards in</h3>'+(i.map(c=>`<div class="item card" data-tc="${esc(c.id)}">${thumb(c)}<div class="info"><b>${cardTitle(c)}</b><br><small>#${esc(c.cert)} · ${now(c)}</small><br>Trade value ${money(c.trade_value_in)}<br><small>My view basis ${money(myBasis(c))} · tax view basis ${money(taxBasis(c))}</small></div><span class="chev">›</span></div>`).join('')||'<div class="msg">None found.</div>')+
+    `<h3>Cash and totals</h3><div class="item">Cash I paid ${money(t.cash_paid)} · cash I received ${money(t.cash_received)}<br>Values out ${money(s(o,c=>c.trade_value_out))} · values in ${money(s(i,c=>c.trade_value_in))}<br>`+
+    `Carryover basis (my view) <b>${money(s(i,myBasis))}</b><br>Market-value basis (tax view) <b>${money(s(i,taxBasis))}</b>`+
+    `${N(t.carryover_gain)?`<br>Cash profit on this trade (my view) ${pc(N(t.carryover_gain))}`:''}<br>Gain on cards out (tax view) ${pc(s(o,tradeGainTax))}</div>`;
+  TABS.forEach(x=>$('#'+x).hidden=true);$('#edit').hidden=true;$('.tabs').hidden=true;$('#tview').hidden=false;scrollTo(0,0)}
+$('#tvback').onclick=()=>{tvId=null;$('#tview').hidden=true;$('.tabs').hidden=false;showTab('inv')};
+$('#tvbody').onclick=e=>{const el=e.target.closest('[data-tc]');if(!el)return;const c=cards.find(x=>String(x.id)===el.dataset.tc);if(!c)return;
+  const other=[c.disposed_trade_id,c.acquired_trade_id].find(x=>x&&String(x)!==tvId&&tradeOf(x));
+  if(other)openTrade(other);else if(c.status!=='traded'){$('#tview').hidden=true;openEdit(c.id)}};
 
 // ---------- Expenses ----------
 const CATS=['Grading fees','Shipping and postage','Supplies','Selling and platform fees','Travel','Meals','Show and booth fees','Software and subscriptions','Other'];
@@ -342,8 +516,8 @@ const slug=s=>String(s??'').normalize('NFKD').replace(/[̀-ͯ]/g,'').replace(/[^
 $('#backup').onclick=async()=>{const btn=$('#backup'),say=t=>$('#bkmsg').textContent=t;btn.disabled=true;
   try{say('Loading zip library…');const JSZip=await loadJSZip();
     say('Reading cards and expenses…');
-    const[c,x]=await Promise.all([sb.from('cards').select('*').order('bought_on'),sb.from('expenses').select('*')]);
-    if(c.error||x.error)throw c.error||x.error;
+    const[c,x,t]=await Promise.all([sb.from('cards').select('*').order('bought_on'),sb.from('expenses').select('*'),sb.from('trades').select('*').order('trade_date')]);
+    if(c.error||x.error||t.error)throw c.error||x.error||t.error;const allTrades=t.data||[];
     const allCards=c.data||[],allExp=(x.data||[]).sort(xsort).reverse(),zip=new JSZip(),used=new Set(),files=new Map(),missing=[];
     const fname=(dir,parts,path)=>{const ext=(path.match(/\.[A-Za-z0-9]+$/)||['.jpg'])[0].toLowerCase(),base=dir+'/'+(parts.map(slug).filter(Boolean).join('_')||'photo');
       let n=base+ext,i=2;while(used.has(n))n=base+'-'+i+++ext;used.add(n);return n};
@@ -356,11 +530,12 @@ $('#backup').onclick=async()=>{const btn=$('#backup'),say=t=>$('#bkmsg').textCon
       else{zip.file(j.file,data,{binary:true,compression:'STORE'});files.set(j.row.id,j.file)}
       say(`Downloading photos ${++done} / ${total}…`)}};
     await Promise.all(Array.from({length:Math.min(4,total)},worker));
-    zip.file('cards.csv',cardsCsv(allCards,files));zip.file('expenses.csv',expCsv(allExp,files));
+    zip.file('cards.csv',cardsCsv(allCards,files,allTrades));zip.file('expenses.csv',expCsv(allExp,files));zip.file('trades.csv',tradesCsv(allTrades,allCards));
     if(missing.length)zip.file('missing-photos.txt',missing.join('\n'));
     const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE'},m=>say(`Building zip ${Math.round(m.percent)}%…`));
     dl(blob,'card-ledger-backup-'+today()+'.zip');
-    say(`Backup saved: ${allCards.length} cards, ${allExp.length} expenses, ${total-missing.length} of ${total} photos`+(missing.length?` (${missing.length} missing, listed in missing-photos.txt).`:'.'))}
+    const n=(k,w)=>k+' '+w+(k===1?'':'s');
+    say(`Backup saved: ${n(allCards.length,'card')}, ${n(allTrades.length,'trade')}, ${n(allExp.length,'expense')}, ${total-missing.length} of ${total} photos`+(missing.length?` (${missing.length} missing, listed in missing-photos.txt).`:'.'))}
   catch(e){say('Backup failed: '+(e.message||e))}
   finally{btn.disabled=false}};
 </script></body></html>
