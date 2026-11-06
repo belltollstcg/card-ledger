@@ -74,7 +74,19 @@ select.v{appearance:none;text-align-last:right}
 .li .amt{font:600 17px 'Space Grotesk',sans-serif;text-align:right;flex:none}
 .li .amt small{display:block;font:500 12px Inter;color:var(--mut)}
 .hero{display:flex;gap:16px;align-items:flex-start;justify-content:center;margin-top:4px}
-.hero .slab{width:52%;max-width:240px;flex:none;box-shadow:0 18px 40px rgba(0,0,0,.45)}
+.hero .shot{position:relative;width:52%;max-width:240px;flex:none}.hero .slab{width:100%;box-shadow:0 18px 40px rgba(0,0,0,.45)}
+.scanbusy{display:none;position:absolute;inset:0;border-radius:14px;overflow:hidden;background:rgba(17,19,24,.3)}.shot.busy .scanbusy{display:block}
+.scanani{position:relative;width:96px;height:150px;margin:0 auto 24px;border:2.5px solid #3a3e48;border-radius:14px;overflow:hidden}
+.scanani::before{content:"";position:absolute;left:10px;right:10px;top:10px;height:22px;border-radius:4px;background:var(--label);opacity:.22}
+.scanani i,.scanbusy i,.aim i{position:absolute;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),transparent);box-shadow:0 0 16px 3px rgba(242,193,78,.55);animation:scanln 1.4s ease-in-out infinite alternate}
+@keyframes scanln{from{top:5%}to{top:93%}}
+.dots::after{content:"";display:inline-block;width:1.2em;text-align:left;animation:dots 1.2s steps(4) infinite}
+@keyframes dots{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}}
+.live{position:fixed;inset:0;background:#000;z-index:25}.live video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.aim{position:absolute;left:50%;top:44%;width:min(80vw,440px);height:min(46vw,250px);transform:translate(-50%,-50%);border:3px solid var(--gold);border-radius:18px;box-shadow:0 0 0 200vmax rgba(0,0,0,.5);overflow:hidden}
+.livetop{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:12px;padding:calc(16px + env(safe-area-inset-top)) 16px 0;color:#fff;font:600 18px 'Space Grotesk',sans-serif}
+.livebot{position:absolute;left:0;right:0;bottom:0;padding:0 16px calc(22px + env(safe-area-inset-bottom));max-width:560px;margin:0 auto}.livebot .msg{color:#fff;text-align:center;font-size:15px}
+@media (prefers-reduced-motion:reduce){.scanani i,.scanbusy i,.aim i,.dots::after{animation:none}.scanani i,.scanbusy i,.aim i{top:48%}}
 .hero .txt{flex:1;min-width:0}
 .tname{min-height:1.3em;background:transparent;border:0;color:var(--fg);font:600 22px/1.2 'Space Grotesk',sans-serif;width:100%;padding:0;outline:none;resize:none;overflow:hidden}
 .tsub{background:transparent;border:0;color:var(--mut);font-size:15px;width:100%;padding:6px 0 0;outline:none}
@@ -164,12 +176,19 @@ nav .tbi{max-width:560px;margin:0 auto;display:flex;align-items:flex-end;padding
 </section>
 
 <!-- ============ LOADING ============ -->
-<section class="view" data-view="loading" hidden><div class="load"><div><div class="spin"></div><h2 id="loadTxt">Reading slab…</h2><div class="msg" id="loadSub"></div><button class="link" data-back style="margin-top:18px">Cancel</button></div></div></section>
+<section class="view" data-view="loading" hidden><div class="load"><div><div class="scanani"><i></i></div><h2 id="loadTxt" class="dots">Scanning</h2><div class="msg" id="loadSub"></div><button class="link" data-back style="margin-top:18px">Cancel</button></div></div></section>
+
+<!-- ============ LIVE CAMERA ============ -->
+<section class="view" data-view="live" hidden><div class="live">
+ <video id="liveVid" playsinline muted autoplay></video><div class="aim"><i></i></div>
+ <div class="livetop"><button class="ib" data-back aria-label="Close"><i class="ic" data-i="close"></i></button>Live scan</div>
+ <div class="livebot"><div class="msg" id="liveMsg"></div><button class="btn dark" id="liveSnap"><i class="ic" data-i="camera"></i>No barcode? Use this frame</button></div>
+</div></section>
 
 <!-- ============ SCANNED ============ -->
 <section class="view" data-view="scanned" hidden>
  <div class="top"><button class="ib" data-back aria-label="Close"><i class="ic" data-i="close"></i></button><h2>Scanned</h2></div>
- <div class="hero"><img id="scImg" class="slab" alt=""><div class="txt">
+ <div class="hero"><div class="shot" id="scShot"><img id="scImg" class="slab" alt=""><div class="scanbusy"><i></i></div></div><div class="txt">
   <textarea id="scName" class="tname" rows="2" placeholder="Card name"></textarea>
   <input id="scYear" class="tsub" placeholder="Year" inputmode="numeric"><input id="scSet" class="tsub" placeholder="Set" style="padding-top:2px">
   <div id="scBadge" class="badge" hidden><i class="ic" data-i="verified"></i>Verified with PSA</div>
@@ -181,7 +200,8 @@ nav .tbi{max-width:560px;margin:0 auto;display:flex;align-items:flex-end;padding
   <a class="kv lnk" id="scCertLink" target="_blank" rel="noopener"><span class="gold" id="scCertLabel">View card on PSA</span><i class="ic" data-i="ext"></i></a>
  </div>
  <div class="sub">Check value</div><div class="pills" id="scValue" style="padding-top:0"></div><div class="qtext" id="scQ"></div>
- <div class="msg" id="scMsg"></div>
+ <div class="msg" id="scMsg" aria-live="polite"></div>
+ <button class="pill sm" id="scRead" hidden style="margin-top:8px"><i class="ic" data-i="scan"></i>Read details from photo</button>
  <button class="btn" id="scAdd">Add to inventory</button>
  <button class="btn dark" id="scSell">Sell</button>
  <button class="link" id="scRescan">Rescan or choose from photos</button>

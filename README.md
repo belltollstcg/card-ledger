@@ -10,12 +10,17 @@ The previous version of the app is kept at **`/classic/`** as a fallback. It use
 
 - **Design**: dark collector look built for speed at card shows. The bottom tab bar has Inventory, Sold, a raised gold **Scan** button, Expenses and Trades.
 - **Inventory**: in-stock count and stock value, search, PSA / CGC / BGS filters, and a 2-column gallery of slab photos with "Paid $X · Nd held". Tap a card for its detail screen.
-- **Scan** (gold button): take a photo of a slab or choose one. `read-slab` reads it, and PSA slabs are checked with `psa-cert`.
+- **Scan** (gold button): **Live scan (barcode)**, **Take photo** or **Choose from photos**.
+  - **Barcode first.** The browser's `BarcodeDetector` (Chrome on Android) reads the slab label's barcode or QR code, from the live camera view or the photo, in milliseconds. A cert URL in a QR code (psacard.com, cgccards.com, beckett.com) names the grader. For a plain number, the grader is guessed from its length, and the PSA lookup confirms it.
+    - **PSA:** goes straight to the `psa-cert` lookup, with no AI reading.
+    - **CGC / BGS / others:** fill in the cert and grader and ask you to confirm the rest. **Read details from photo** runs the AI reading on request.
+  - **AI reading only as a fallback** (`read-slab`, photo shrunk to 800 px on the long side): when no barcode is found, or PSA can't be reached.
+  - **Fast:** the **Scanned** screen opens straight away with the photo, and fields fill in as each step finishes, with a scanning animation meanwhile. Anything you type is never overwritten. The slab photo (resized to 1280 px) uploads to storage in the background and is attached when you save; an abandoned scan's photo is deleted when you scan again.
   - The **Scanned** screen shows the photo with name, year and set, a "Verified with PSA" badge, grade and cert, a link to the grader's cert page, and value links.
   - From there:
     - **Add to inventory**: a big "Price paid" number, fees / shipping, date, and "Bought from" pills. A duplicate-cert warning appears with **Save anyway**.
-    - **Sell**: a big "Sold for" number, fees, date, "Sold on" pills, and a live profit / paid / days-held preview. If several in-stock cards share the cert, you pick which one.
-  - Any misread field can be fixed by tapping it.
+    - **Sell**: a big "Sold for" number, fees, date, "Sold on" pills, and a live profit / paid / days-held preview. If several in-stock cards share the cert, you pick which one. A card with no photo gets the scanned one.
+  - Trades read barcodes first too.
 - **Value links** (Scanned and Card detail screens). The exact text each link searches for is shown under the buttons.
   - **Card Ladder:** copies the cert ("Cert copied, paste in Card Ladder") and opens the installed Android app (`intent://…package=com.ladderstudios.cardladder`), falling back to cardladder.com. Other devices open Card Ladder's cert search page.
   - **ALT:** for PSA and BGS slabs, copies the cert, since ALT's search accepts PSA/BGS cert numbers but has no search link. For other graders, copies the detailed search text. Either way it then opens ALT.
@@ -68,6 +73,7 @@ The previous version of the app is kept at **`/classic/`** as a fallback. It use
 | `supabase/record_trade.sql` | The `record_trade` database function that saves a trade in one transaction |
 | `supabase/delete_trade.sql` | The `delete_trade` database function that undoes a trade in one transaction |
 | `supabase/functions/psa-cert/index.ts` | The `psa-cert` edge function that verifies PSA certs |
+| `supabase/functions/read-slab/index.ts` | The `read-slab` edge function (Claude Haiku 5.5) that reads a slab label when there's no barcode |
 
 The app has no build step and no dependencies to install.
 
@@ -138,13 +144,13 @@ Both are **private** buckets. Photos are resized to at most 1280 px and saved as
 
 ### Edge function: `read-slab`
 
-The app calls it with `supabase.functions.invoke('read-slab', { body: { image } })`, where `image` is a base64-encoded JPEG with no `data:` prefix. It should return JSON like:
+`supabase/functions/read-slab/index.ts` reads the slab label with Claude Haiku 5.5 (`claude-haiku-5-5`, `max_tokens` 200, thinking off, effort low, structured JSON output). It uses the `ANTHROPIC_API_KEY` secret. The app calls it with `supabase.functions.invoke('read-slab', { body: { image } })`, where `image` is a base64-encoded JPEG (800 px on the long side) with no `data:` prefix, and only when it couldn't read the slab's barcode. It returns:
 
 ```json
-{ "grader": "PSA", "grade": "10", "cert": "12345678", "name": "Charizard", "set": "Base Set 1999" }
+{ "grader": "PSA", "grade": "10", "cert": "12345678", "name": "Charizard Holo 4/102", "set": "1999 Pokemon Base Set" }
 ```
 
-Any field it can't read can be left out. If the call fails, the app falls back to manual entry.
+Any field it can't read is an empty string. If the call fails, the app falls back to manual entry.
 
 ### Edge function: `read-receipt`
 
