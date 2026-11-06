@@ -140,3 +140,23 @@ To run it locally, serve the folder with any static server, for example:
 ```bash
 python3 -m http.server 8000
 ```
+
+## Beta app (`/beta/`)
+
+A redesigned version of the app lives in `beta/` (`index.html`, `app.js`, its own `manifest.json` named "Card Ledger Beta" and `icon.svg`), so it can be installed on Android separately from the classic app. It uses the same Supabase project, tables, login, buckets and functions. The classic app at the root is unchanged.
+
+- Dark collector design with a bottom tab bar: Inventory, Sold, a gold **Scan** button, Expenses and Trades.
+- **Scan** reads a slab with `read-slab`, then shows the card with links to the grader's cert page, Card Ladder (searched by cert), ALT and eBay sold listings. From there: **Add to inventory** (price paid, fees, date, "Bought from") or **Sell** (sold for, fees, date, "Sold on", live profit preview).
+- Card detail, edit and delete, Sold with My view / Tax view, Expenses, Trades (new, view, delete), CSV exports and Backup all work as in the classic app.
+- New columns used: `cards.bought_from`, `cards.sold_platform`, `cards.psa_data`.
+
+### PSA verification (`psa-cert` edge function)
+
+`supabase/functions/psa-cert/index.ts` looks up a cert with PSA's public API (`GET https://api.psacard.com/publicapi/cert/GetByCertNumber/{cert}`) using the `PSA_API_TOKEN` secret. It returns only `verified`, `cert`, `name`, `year`, `set` and `grade`, never the full PSA response.
+
+PSA data rules (PSA API licence):
+- Only `verified`, `verified_at`, `name`, `year`, `set`, `grade` and `cert` are stored, only in `cards.psa_data`.
+- Each cert is looked up at most once: the app reuses `psa_data` already stored on any card with that cert, and results from earlier scans in the same session.
+- The card's own columns (name, set, grade) keep the photo reading or your edits. The beta shows PSA's verified details when present, so clearing `psa_data` removes every trace of PSA data in one step.
+- `psa_data` is never included in CSV exports or the Backup zip.
+- If PSA can't be reached, the scan falls back to the photo reading and nothing is stored.
