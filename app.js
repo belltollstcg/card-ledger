@@ -49,11 +49,11 @@ fillIcons(document);
 // tap: the exit guard on the first tap, the scan screen when Take photo / Choose from photos is tapped. Anything
 // that happens later (photo read, save finished) replaces entries instead of adding them.
 const TABS=['inv','sold','exp','trades'];let cur='inv',idx=1,pendingHome=null,exitWarnAt=0;
-function render(v){$$('.view').forEach(s=>s.hidden=s.dataset.view!==v);cur=v;const tab=TABS.includes(v);$('#tabbar').hidden=!tab;
+function render(v){if(cur==='live'&&v!=='live')stopLive();$$('.view').forEach(s=>s.hidden=s.dataset.view!==v);cur=v;const tab=TABS.includes(v);$('#tabbar').hidden=!tab;
   if(tab)$$('#tabbar [data-tab]').forEach(b=>b.classList.toggle('on',b.dataset.tab===v));scrollTo(0,0)}
 // data: what to reopen if the user comes back to this entry (a card or trade id)
 function show(v,{push=true,data=null,replace=false}={}){
-  if(push&&v!==cur){if(cur==='loading'||replace)history.replaceState({v,idx,data},'');// a loading screen is replaced, not kept
+  if(push&&v!==cur){if(cur==='loading'||cur==='live'||replace)history.replaceState({v,idx,data},'');// loading / camera screens are replaced, not kept
     else{idx++;history.pushState({v,idx,data},'')}}
   else if(v===cur)history.replaceState({v,idx,data},'');
   render(v)}
@@ -64,7 +64,7 @@ function home(tab){return new Promise(res=>{
   if(idx<=1){if(idx===1)history.replaceState({v:tab,idx:1},'');render(tab);res();return}
   pendingHome={tab,res};history.go(-(idx-1))})}
 // screens that can't be rebuilt from a history entry (their data was in memory)
-const TRANSIENT=['loading','scanned','add','sell','pick','trade','xform'];
+const TRANSIENT=['loading','live','scanned','add','sell','pick','trade','xform'];
 function initHistory(){const s=history.state;
   if(s&&typeof s.idx==='number'){// the page was reloaded (Android can do this while the camera is open): keep its history
     idx=s.idx;if(s.root){render('inv');armGuard();return}
@@ -107,17 +107,47 @@ $('#scrim').onclick=closeSheet;
 let onPhoto=null;
 // loading: text for a loading screen opened in the same tap (so its history entry counts); cancelling the picker closes it
 let pickLoading=false;
-function pickPhoto(title,fn,loading){const go=input=>{onPhoto=fn;pickLoading=!!loading;
-    if(loading){$('#loadTxt').textContent=loading;$('#loadSub').textContent='';show('loading',{replace:cur==='scanned'})}
-    $(input).click()};
-  sheet(title,[{label:'Take photo',icon:'camera',fn:()=>go('#camIn')},{label:'Choose from photos',icon:'image',fn:()=>go('#libIn')}])}
+function pickInto(input,fn,loading){onPhoto=fn;pickLoading=!!loading;
+  if(loading){$('#loadTxt').textContent=loading;$('#loadSub').textContent='';show('loading',{replace:cur==='scanned'})}
+  $(input).click()}
+function pickPhoto(title,fn,loading){
+  sheet(title,[{label:'Take photo',icon:'camera',fn:()=>pickInto('#camIn',fn,loading)},{label:'Choose from photos',icon:'image',fn:()=>pickInto('#libIn',fn,loading)}])}
 ['#camIn','#libIn'].forEach(id=>{$(id).onchange=e=>{const f=e.target.files[0];e.target.value='';pickLoading=false;if(f&&onPhoto)onPhoto(f);else if(cur==='loading')back()};
   $(id).addEventListener('cancel',()=>{if(pickLoading&&cur==='loading'){pickLoading=false;back()}})});
-async function shrink(file){const img=await createImageBitmap(file),k=Math.min(1,1280/Math.max(img.width,img.height));
-  const c=document.createElement('canvas');c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);
+// JPEG of any image source (file, blob, bitmap, video frame), no longer than max px on its long side
+async function shrinkTo(src,max){const img=src instanceof Blob?await createImageBitmap(src):src,w=img.videoWidth||img.width,h=img.videoHeight||img.height,k=Math.min(1,max/Math.max(w,h));
+  const c=document.createElement('canvas');c.width=Math.round(w*k);c.height=Math.round(h*k);
   c.getContext('2d').drawImage(img,0,0,c.width,c.height);return new Promise(r=>c.toBlob(r,'image/jpeg',.85))}
+const shrink=f=>shrinkTo(f,1280);// photos kept in storage
+const AI_PX=800;// photos sent to read-slab
 const b64=blob=>new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result.split(',')[1]);f.readAsDataURL(blob)});
 async function readSlab(blob){const{data,error}=await sb.functions.invoke('read-slab',{body:{image:await b64(blob)}});if(error)throw error;return data||{}}
+// ---------- barcode (fast path) ----------
+// Slab labels carry a barcode with the cert number, and newer ones a QR code with the cert URL. Chrome on Android reads
+// them with BarcodeDetector in milliseconds, so the AI reading (read-slab) only runs when no barcode is found.
+const BC_FORMATS=['qr_code','code_128','code_39','code_93','data_matrix','pdf417','itf','codabar','ean_13','upc_a'];
+let detP=null;
+const getDetector=()=>detP||=(async()=>{try{if(!('BarcodeDetector' in window))return null;const ok=await BarcodeDetector.getSupportedFormats(),f=BC_FORMATS.filter(x=>ok.includes(x));
+  return f.length?new BarcodeDetector({formats:f}):null}catch{return null}})();
+// {grader, cert, sure}: sure = the grader comes from a cert URL; otherwise it's a guess from the number's length
+function parseBarcode(raw){const s=String(raw||'').trim();let m;
+  if((m=s.match(/psacard\.com\/cert\/(\d{4,12})/i)))return{grader:'PSA',cert:m[1],sure:true};
+  if((m=s.match(/cgccards\.com\/certlookup\/(\d{6,15})/i)))return{grader:'CGC',cert:m[1],sure:true};
+  if(/beckett\.com/i.test(s)&&(m=s.match(/item_id=(\d{6,12})/i)))return{grader:'BGS',cert:m[1],sure:true};
+  if(/sgccard\.com/i.test(s)&&(m=s.match(/(\d{7,10})/)))return{grader:'SGC',cert:m[1],sure:true};
+  const d=s.replace(/[\s-]/g,'');if(!/^\d{6,15}$/.test(d))return null;
+  if(d.length===10&&d.startsWith('00'))return{grader:'BGS',cert:d,sure:false};
+  if(d.length>=10)return{grader:'CGC',cert:d,sure:false};
+  if(d.length>=7)return{grader:'PSA',cert:d,sure:false};
+  return{grader:'',cert:d,sure:false}}
+async function findBarcode(src){const det=await getDetector();if(!det)return null;
+  try{const codes=(await det.detect(src)).map(c=>parseBarcode(c.rawValue)).filter(Boolean);return codes.find(c=>c.sure)||codes[0]||null}catch{return null}}
+const canLiveScan=()=>'BarcodeDetector' in window&&!!navigator.mediaDevices?.getUserMedia;
+// slab photos upload in the background while you check the details; the path is attached when you save
+let myUid=null;
+async function uid(){if(!myUid)myUid=(await sb.auth.getUser()).data.user?.id;return myUid}
+function uploadSlab(blob){return(async()=>{try{const path=(await uid())+'/'+Date.now()+'-'+Math.random().toString(36).slice(2,7)+'.jpg',
+  up=await sb.storage.from('slabs').upload(path,blob,{contentType:'image/jpeg'});return up.error?null:path}catch{return null}})()}
 const withTimeout=(p,ms)=>Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),ms))]);
 
 // pill groups (single choice; tap the chosen pill again to clear it)
@@ -251,7 +281,7 @@ function valueLinks(c){const sp=searchParts(c),text=searchText(sp),cert=String(c
       copy:cert||text,toast:cert?'Cert copied, paste in Card Ladder':'Search text copied, paste in Card Ladder'},
     {label:'ALT',url:'https://alt.xyz/browse?query='+enc(altCert?cert:text),copy:altCert?cert:text,toast:altCert?'Cert copied, paste in ALT':'Search text copied, paste in ALT'},
     {label:'eBay',url:ebayUrl(sp)}];
-  const lines=[`eBay sold: ${text} ${EBAY_NOISE}`,`ALT: ${altCert?'cert '+cert:text}`,`Card Ladder: ${cert?'cert '+cert:text}`];
+  const lines=[text?`eBay sold: ${text} ${EBAY_NOISE}`:'eBay sold: needs the card name',`ALT: ${altCert?'cert '+cert:text}`,`Card Ladder: ${cert?'cert '+cert:text}`];
   return{links,lines}}
 const linkPill=l=>`<a class="pill sm" href="${esc(l.url)}" target="_blank" rel="noopener"${l.copy?` data-copy="${esc(l.copy)}" data-toast="${esc(l.toast)}"`:''}>${esc(l.label)}${icon('ext',16)}</a>`;
 const queryLines=lines=>lines.map(t=>`<div>${esc(t)}</div>`).join('');
@@ -279,19 +309,62 @@ function fromRead(d){const set=String(d.set||'').trim(),y=set.match(/\b(19|20)\d
     year:y?y[0]:'',set:y?set.replace(y[0],'').replace(/\s{2,}/g,' ').trim():set}}
 function withPsa(d,p){if(!p||!p.verified)return d;return{...d,grader:'PSA',cert:p.cert||d.cert,name:tc(p.name)||d.name,year:p.year||d.year,set:tc(p.set)||d.set,grade:gradeNum(p.grade)||d.grade}}
 const joinSet=(year,set)=>year&&!String(set).includes(year)?`${year} ${set}`.trim():String(set||'').trim();
-$('#scanBtn').onclick=()=>pickPhoto('Scan a slab',scanFile,'Reading slab…');
-$('#scRescan').onclick=()=>pickPhoto('Scan a slab',scanFile,'Reading slab…');
-async function scanFile(file){if(S?.url)URL.revokeObjectURL(S.url);S=null;$('#loadTxt').textContent='Reading slab…';if(cur!=='loading')show('loading',{replace:true});// a rescan replaces the old result
-  let blob,d={grader:'',grade:'',cert:'',name:'',year:'',set:''},msg='';
-  try{blob=await shrink(file)}catch{toast('Could not open that photo');back();return}
-  try{d=fromRead(await readSlab(blob))}catch{msg='Could not read the slab. Fill in the details by hand.'}
-  let psa=null;
-  if(gnorm(d.grader)==='PSA'&&d.cert){$('#loadTxt').textContent='Checking PSA…';psa=await psaLookup(d.cert);
-    if(psa&&!psa.verified)msg='PSA has no record of this cert. Check the cert number.';else if(!psa)msg='Couldn’t reach PSA, so these details are from the photo.'}
-  S={blob,url:URL.createObjectURL(blob),psa,read:d,shown:withPsa(d,psa)};
-  fillScanned(msg);show('scanned');fitName()}
+function scanMenu(){const items=[{label:'Take photo',icon:'camera',fn:()=>pickInto('#camIn',scanFile,'Scanning')},{label:'Choose from photos',icon:'image',fn:()=>pickInto('#libIn',scanFile,'Scanning')}];
+  if(canLiveScan())items.unshift({label:'Live scan (barcode)',icon:'scan',fn:startLive});
+  sheet('Scan a slab',items)}
+$('#scanBtn').onclick=scanMenu;$('#scRescan').onclick=scanMenu;
+const EMPTY={grader:'',grade:'',cert:'',name:'',year:'',set:''};
+let scanTok=0;
+// forget an unsaved scan, deleting its background-uploaded photo
+function dropScan(){if(S){if(!S.kept&&S.upload)S.upload.then(p=>{if(p)sb.storage.from('slabs').remove([p])});if(S.url)URL.revokeObjectURL(S.url);try{S.bmp?.close()}catch{}}S=null}
+async function scanFile(file){let bmp;try{bmp=await createImageBitmap(file)}catch{toast('Could not open that photo');back();return}
+  runScan(file,bmp,await findBarcode(bmp))}
+// display: the image to show straight away; bmp: decoded image; bc: what the barcode said (or null)
+async function runScan(display,bmp,bc){const tok=++scanTok;dropScan();
+  const read={...EMPTY,...(bc?{grader:bc.grader,cert:bc.cert}:{})},photoP=shrink(bmp);// 1280px copy for storage, made in the background
+  S={tok,bmp,photoP,url:URL.createObjectURL(display),psa:null,read,shown:{...read},bc,touched:new Set(),upload:photoP.then(uploadSlab)};
+  fillScanned('');show('scanned');fitName();$('#scRead').hidden=true;
+  if(!bc)return aiFill(tok);
+  if(bc.grader==='PSA'){scanBusy(true,'Checking PSA');const p=await psaLookup(bc.cert);if(S?.tok!==tok)return;S.psa=p;
+    if(p&&p.verified){applyFill(withPsa(S.read,p));return scanBusy(false,'')}
+    if(!p)return aiFill(tok,'Couldn’t reach PSA, reading the label');
+    if(!bc.sure)applyFill({...S.read,grader:''});
+    $('#scRead').hidden=false;return scanBusy(false,`PSA has no record of cert ${bc.cert}. Check the grader, or read the details from the photo.`)}
+  $('#scRead').hidden=false;
+  scanBusy(false,`${bc.grader?bc.grader+' cert':'Cert'} ${bc.cert} read from the barcode. Confirm the grader and fill in the rest, or read it from the photo.`)}
+// AI reading of the label (read-slab), only when the barcode didn't give the details
+async function aiFill(tok,msg){if(S?.tok!==tok)return;scanBusy(true,msg||'Reading the label');let d=null,err='';
+  try{d=fromRead(await readSlab(await shrinkTo(S.bmp,AI_PX)))}catch{err='Couldn’t read the label. Fill in the details by hand.'}
+  if(S?.tok!==tok)return;
+  if(d){const bc=S.bc;S.read={...d,cert:bc?.cert||d.cert,grader:bc?.sure?bc.grader:(d.grader||bc?.grader||'')};
+    if(gnorm(S.read.grader)==='PSA'&&S.read.cert&&!psaFor(S.psa,S.read.cert)){scanBusy(true,'Checking PSA');S.psa=await psaLookup(S.read.cert);if(S?.tok!==tok)return}
+    applyFill(withPsa(S.read,S.psa));
+    if(gnorm(S.read.grader)==='PSA'&&S.read.cert)err=!S.psa?'Couldn’t reach PSA, so these details are from the photo.':!S.psa.verified?'PSA has no record of this cert. Check the cert number.':''}
+  $('#scRead').hidden=true;scanBusy(false,err)}
+$('#scRead').onclick=()=>{if(S)aiFill(S.tok)};
+// put new details into every field the user hasn't typed in
+const SCF={name:'#scName',year:'#scYear',set:'#scSet',grader:'#scGrader',grade:'#scGrade',cert:'#scCert'};
+function applyFill(d){S.shown=d;for(const[k,id]of Object.entries(SCF))if(!S.touched.has(k))$(id).value=d[k]||'';updScanned()}
+Object.entries(SCF).forEach(([k,id])=>$(id).addEventListener('input',()=>{if(S)S.touched.add(k)}));
+function scanBusy(on,msg){$('#scShot').classList.toggle('busy',on);$('#scRead').disabled=on;$('#scMsg').innerHTML=on?`<span class="dots">${esc(msg)}</span>`:esc(msg||'')}
+
+// ---------- live barcode scan ----------
+let liveStream=null,liveTimer=null,liveTok=0;
+async function startLive(){const tok=++liveTok;$('#liveMsg').textContent='Point the camera at the barcode on the slab label';show('live',{replace:cur==='scanned'});
+  try{liveStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false})}
+  catch{if(tok===liveTok&&cur==='live'){toast('Camera not available. Use Take photo instead.',3000);back()}return}
+  if(tok!==liveTok||cur!=='live'){liveStream.getTracks().forEach(t=>t.stop());liveStream=null;return}
+  const v=$('#liveVid');v.srcObject=liveStream;try{await v.play()}catch{}
+  const tick=async()=>{if(tok!==liveTok||cur!=='live')return;
+    if(v.readyState>=2){const bc=await findBarcode(v);
+      if(bc&&tok===liveTok&&cur==='live'){const frame=await shrinkTo(v,1280),bmp=await createImageBitmap(frame);stopLive();if(navigator.vibrate)navigator.vibrate(40);return runScan(frame,bmp,bc)}}
+    liveTimer=setTimeout(tick,120)};
+  tick()}
+function stopLive(){liveTok++;clearTimeout(liveTimer);if(liveStream){liveStream.getTracks().forEach(t=>t.stop());liveStream=null}const v=$('#liveVid');if(v)v.srcObject=null}
+// no barcode in view (or an old label): use the current frame and let the AI read it
+$('#liveSnap').onclick=async()=>{const v=$('#liveVid');if(!liveStream||v.readyState<2)return;const bc=await findBarcode(v),frame=await shrinkTo(v,1280),bmp=await createImageBitmap(frame);stopLive();runScan(frame,bmp,bc)};
 function scanVals(){return{grader:$('#scGrader').value.trim(),grade:$('#scGrade').value.trim(),cert:$('#scCert').value.replace(/\s/g,''),name:$('#scName').value.trim(),year:$('#scYear').value.trim(),set:$('#scSet').value.trim()}}
-function fillScanned(msg){const d=S.shown;$('#scImg').src=S.url;$('#scName').value=d.name;$('#scYear').value=d.year;$('#scSet').value=d.set;
+function fillScanned(msg){const d=S.shown;$('#scShot').classList.remove('busy');$('#scImg').src=S.url;$('#scName').value=d.name;$('#scYear').value=d.year;$('#scSet').value=d.set;
   $('#scGrader').value=d.grader;$('#scGrade').value=d.grade;$('#scCert').value=d.cert;$('#scMsg').textContent=msg||'';updScanned()}
 function updScanned(){const v=scanVals(),p=psaFor(S.psa,v.cert);$('#scBadge').hidden=!(p&&p.verified&&gnorm(v.grader)==='PSA');
   const cl=certLink(v.grader,v.cert);$('#scCertLink').hidden=!cl;if(cl){$('#scCertLink').href=cl.url;$('#scCertLabel').textContent='View card on '+cl.label}
@@ -301,7 +374,7 @@ function fitName(){const n=$('#scName');if(!n.offsetParent)return;n.style.height
 // a corrected PSA cert gets checked too (once per cert)
 ['#scCert','#scGrader'].forEach(id=>$(id).addEventListener('change',async()=>{const v=scanVals();if(gnorm(v.grader)!=='PSA'||!v.cert||psaFor(S.psa,v.cert))return;
   $('#scMsg').textContent='Checking PSA…';const p=await psaLookup(v.cert);if(!S)return;S.psa=p||S.psa;
-  if(p&&p.verified){const d=withPsa(scanVals(),p);S.shown=d;$('#scName').value=d.name;$('#scYear').value=d.year;$('#scSet').value=d.set;$('#scGrade').value=d.grade;$('#scMsg').textContent=''}
+  if(p&&p.verified){applyFill(withPsa({...S.read,...scanVals()},p));$('#scMsg').textContent='';$('#scRead').hidden=true}
   else $('#scMsg').textContent=p?'PSA has no record of this cert.':'Couldn’t reach PSA.';updScanned()}));
 // Fields still showing PSA's values are saved as the photo reading instead; anything the user typed is kept.
 function ownCols(v,shown,read){const o={...v};if(shown&&read)for(const k of['name','year','set','grade'])if(v[k]===shown[k]&&shown[k]!==read[k])o[k]=read[k];return o}
@@ -324,18 +397,18 @@ $('#addDupCancel').onclick=()=>{$('#addDup').hidden=true;$('#addMsg').textConten
 $('#addDupSave').onclick=()=>{$('#addDup').hidden=true;saveNew()};
 async function saveNew(){if(!S)return;const v=scanVals(),btn=$('#addSave');btn.disabled=true;$('#addMsg').textContent='Saving…';
   try{let photo=null;
-    if(S.blob){const u=(await sb.auth.getUser()).data.user,path=u.id+'/'+Date.now()+'.jpg',up=await sb.storage.from('slabs').upload(path,S.blob,{contentType:'image/jpeg'});if(!up.error)photo=path}
+    if(S.upload){$('#addMsg').textContent='Finishing the photo upload…';photo=await S.upload;if(!photo)S.upload=S.photoP.then(uploadSlab);$('#addMsg').textContent='Saving…'}
     const p=psaFor(S.psa,v.cert),o=ownCols(v,S.shown,S.read);
     const{error}=await sb.from('cards').insert({cert:v.cert,grader:v.grader,grade:o.grade,name:o.name,set_name:joinSet(o.year,o.set),cost:N($('#addPrice').value),buy_fees:N($('#addFees').value),
       bought_on:$('#addDate').value||today(),photo,acquired_via:'purchase',bought_from:pget($('#addFrom')),...(p?{psa_data:p}:{})});
-    if(error){if(photo)sb.storage.from('slabs').remove([photo]);$('#addMsg').textContent='Save failed: '+error.message;return}
-    toast('Saved to inventory');S=null;await home('inv');load()}
+    if(error){$('#addMsg').textContent='Save failed: '+error.message;return}// the uploaded photo stays with the scan for a retry
+    toast('Saved to inventory');S.kept=true;S=null;await home('inv');load()}
   finally{btn.disabled=false}}
 
 // ---------- sell ----------
-let sellCard=null,sellPsa=null;
+let sellCard=null,sellPsa=null,sellScan=null;
 $('#scSell').onclick=()=>{const v=scanVals(),st=cards.filter(c=>c.status==='inventory'),ms=v.cert?st.filter(c=>String(c.cert).trim()===v.cert):[];
-  sellPsa=psaFor(S.psa,v.cert);
+  sellPsa=psaFor(S.psa,v.cert);sellScan=S;
   if(ms.length===1)return openSell(ms[0].id);
   openPick(ms.length?ms:st,ms.length?`${ms.length} in-stock cards have cert ${v.cert}. Pick the one you sold.`:`No in-stock card has cert ${v.cert||'?'}. Pick the card you sold.`,openSell)};
 let pickList=[],pickFn=null;
@@ -353,10 +426,11 @@ function updSell(){const c=sellCard;if(!c)return;const p=N($('#sellPrice').value
 ['#sellPrice','#sellFees','#sellDate'].forEach(id=>$(id).addEventListener('input',updSell));
 $('#sellSave').onclick=async()=>{const c=sellCard;if($('#sellPrice').value===''){$('#sellMsg').textContent='Enter the price it sold for.';return}
   const btn=$('#sellSave');btn.disabled=true;$('#sellMsg').textContent='Saving…';
-  try{const p=!c.psa_data&&psaFor(sellPsa,c.cert);
-    const{error}=await sb.from('cards').update({status:'sold',sold_for:N($('#sellPrice').value),sell_fees:N($('#sellFees').value),sold_on:$('#sellDate').value||today(),sold_platform:pget($('#sellOn')),...(p?{psa_data:p}:{})}).eq('id',c.id);
+  try{const p=!c.psa_data&&psaFor(sellPsa,c.cert),scan=sellScan&&sellScan===S?S:null,photo=scan&&!c.photo&&scan.upload?await scan.upload:null;
+    const{error}=await sb.from('cards').update({status:'sold',sold_for:N($('#sellPrice').value),sell_fees:N($('#sellFees').value),sold_on:$('#sellDate').value||today(),sold_platform:pget($('#sellOn')),...(p?{psa_data:p}:{}),...(photo?{photo}:{})}).eq('id',c.id);
     if(error){$('#sellMsg').textContent='Save failed: '+error.message;return}
-    toast(`Sold · profit ${money(N($('#sellPrice').value)-N($('#sellFees').value)-myBasis(c))}`);sellCard=sellPsa=null;S=null;await home('sold');load()}
+    if(scan){if(photo)scan.kept=true;dropScan()}
+    toast(`Sold · profit ${money(N($('#sellPrice').value)-N($('#sellFees').value)-myBasis(c))}`);sellCard=sellPsa=sellScan=null;await home('sold');load()}
   finally{btn.disabled=false}};
 
 // ---------- card detail ----------
@@ -380,7 +454,7 @@ function openCard(id,{push=true}={}){const c=cardById(id);if(!c){if(cur==='card'
   if(c.acquired_trade_id&&tradeOf(c.acquired_trade_id))act.push(`<button class="link" data-trade="${esc(c.acquired_trade_id)}">View the trade it came from</button>`);
   if(c.disposed_trade_id&&tradeOf(c.disposed_trade_id))act.push(`<button class="link" data-trade="${esc(c.disposed_trade_id)}">View the trade it went out in</button>`);
   $('#cdActions').innerHTML=act.join('');
-  if(c.status==='inventory'){$('#cdSell').onclick=()=>{sellPsa=null;openSell(c.id)};$('#cdTrade').onclick=()=>startTrade([c.id])}
+  if(c.status==='inventory'){$('#cdSell').onclick=()=>{sellPsa=sellScan=null;openSell(c.id)};$('#cdTrade').onclick=()=>startTrade([c.id])}
   if(push||cur!=='card')show('card',{push,data:c.id})}
 $('#cdActions').addEventListener('click',e=>{const b=e.target.closest('[data-trade]');if(b)openTrade(b.dataset.trade)});
 $('#cdEdit').onclick=()=>openEdit(cdId);
@@ -475,8 +549,8 @@ $('#trOutList').oninput=e=>{const i=e.target.dataset.ov;if(i!=null){T.out[i].val
 $('#trOutList').onclick=e=>{const b=e.target.closest('[data-orm]');if(b){T.out.splice(+b.dataset.orm,1);renderTOut()}};
 $('#trOutPick').onclick=()=>{const used=new Set(T.out.map(o=>String(o.id))),st=cards.filter(c=>c.status==='inventory'&&!used.has(String(c.id))),m=T.match&&st.filter(c=>T.match.includes(String(c.id)));
   T.match=null;openPick(m&&m.length?m:st,m&&m.length?`${m.length} in-stock cards have that cert. Pick the one you’re giving up.`:'Pick a card you’re giving up.',id=>{addOut(id);back()})};
-$('#trOutScan').onclick=()=>pickPhoto('Scan a slab you’re giving up',async f=>{const t=T;$('#trOutMsg').textContent='Reading slab…';
-  try{const d=fromRead(await readSlab(await shrink(f)));if(T!==t)return;const used=new Set(T.out.map(o=>String(o.id))),ms=d.cert?cards.filter(c=>c.status==='inventory'&&!used.has(String(c.id))&&String(c.cert).trim()===d.cert):[];
+$('#trOutScan').onclick=()=>pickPhoto('Scan a slab you’re giving up',async f=>{const t=T;$('#trOutMsg').innerHTML='<span class="dots">Scanning</span>';
+  try{const bmp=await createImageBitmap(f),bc=await findBarcode(bmp),d=bc?{...EMPTY,cert:bc.cert}:fromRead(await readSlab(await shrinkTo(bmp,AI_PX)));if(T!==t)return;const used=new Set(T.out.map(o=>String(o.id))),ms=d.cert?cards.filter(c=>c.status==='inventory'&&!used.has(String(c.id))&&String(c.cert).trim()===d.cert):[];
     if(ms.length===1)addOut(ms[0].id);
     else if(ms.length>1){T.match=ms.map(c=>String(c.id));$('#trOutMsg').textContent=`${ms.length} in-stock cards have cert ${d.cert}. Tap From list to pick which one.`}
     else $('#trOutMsg').textContent=d.cert&&cards.some(c=>used.has(String(c.id))&&String(c.cert).trim()===d.cert)?'That card is already in this trade.':`No in-stock card with cert ${d.cert||'?'}. Use From list.`}
@@ -486,9 +560,15 @@ const TIF=[['name','Name'],['set_name','Set / year'],['grader','Grader'],['grade
 function newIn(){const c={key:++tkey,grader:'',grade:'',cert:'',name:'',set_name:'',value:'',blob:null,url:null,reading:false,psa:null};T.in.push(c);return c}
 $('#trInHand').onclick=()=>{newIn();renderTIn()};
 $('#trInScan').onclick=()=>pickPhoto('Photo of a slab you’re getting',async f=>{const t=T,c=newIn();c.reading=true;renderTIn();
-  try{c.blob=await shrink(f);c.url=URL.createObjectURL(c.blob);if(T===t)renderTIn();let d=fromRead(await readSlab(c.blob));
+  try{const bmp=await createImageBitmap(f);c.blob=await shrink(bmp);c.url=URL.createObjectURL(c.blob);if(T===t)renderTIn();
+    // barcode first: a verified PSA cert or another grader's barcode needs no AI reading
+    const bc=await findBarcode(bmp);let d={...EMPTY,...(bc?{grader:bc.grader,cert:bc.cert}:{})};
+    if(bc&&bc.grader==='PSA')c.psa=await psaLookup(bc.cert);
+    if(!bc||(bc.grader==='PSA'&&!(c.psa&&c.psa.verified))){const r=fromRead(await readSlab(await shrinkTo(bmp,AI_PX)));
+      d={...r,cert:bc?.cert||r.cert,grader:bc?.sure?bc.grader:(r.grader||bc?.grader||'')};
+      if(gnorm(d.grader)==='PSA'&&d.cert&&!psaFor(c.psa,d.cert))c.psa=await psaLookup(d.cert)}
     c.read={name:d.name,set_name:joinSet(d.year,d.set),grade:d.grade};
-    if(gnorm(d.grader)==='PSA'&&d.cert){c.psa=await psaLookup(d.cert);d=withPsa(d,c.psa)}
+    d=withPsa(d,c.psa);
     c.shown={name:d.name,set_name:joinSet(d.year,d.set),grade:d.grade};
     Object.assign(c,{grader:d.grader,grade:d.grade,cert:d.cert,name:d.name,set_name:joinSet(d.year,d.set)});if(T===t)$('#trInMsg').textContent='Check the details and enter a trade value.'}
   catch{if(T===t)$('#trInMsg').textContent='Could not read that photo. Fill in the card by hand.'}
@@ -547,11 +627,11 @@ function openXForm(e,pre){xEditing=e||null;const d=e||pre||{};
   pset($('#xfCat'),d.category&&CATS.includes(d.category)?d.category:d.category?'Other':null);
   const u=e?rurls[e.photo]:xUrl;$('#xfImg').hidden=!u;if(u)$('#xfImg').src=u;$('#xfDel').hidden=!e;$('#xfMsg').textContent=pre&&pre.msg||'';show('xform')}
 $('#xAddHand').onclick=()=>{xBlob=xRaw=null;if(xUrl)URL.revokeObjectURL(xUrl);xUrl=null;openXForm(null,{})};
-$('#xAdd').onclick=()=>pickPhoto('Add a receipt',async f=>{if(xUrl)URL.revokeObjectURL(xUrl);xRaw=null;$('#loadTxt').textContent='Reading receipt…';if(cur!=='loading')show('loading',{replace:true});
+$('#xAdd').onclick=()=>pickPhoto('Add a receipt',async f=>{if(xUrl)URL.revokeObjectURL(xUrl);xRaw=null;$('#loadTxt').textContent='Reading receipt';if(cur!=='loading')show('loading',{replace:true});
   let pre={msg:''};try{xBlob=await shrink(f);xUrl=URL.createObjectURL(xBlob);const{data,error}=await sb.functions.invoke('read-receipt',{body:{image:await b64(xBlob)}});if(error)throw error;const d=data||{};xRaw=d;
     pre={vendor:d.vendor||'',expense_date:isoDate(d.date)||today(),expense_time:hhmm(d.time),amount:num(d.total),tax:num(d.tax),category:matchCat(d.category),payment_method:d.payment_method||'',notes:d.summary||'',msg:'Check the details, then save.'}}
   catch{pre={msg:'Could not read the receipt. Enter the details by hand.'}}
-  openXForm(null,pre)},'Reading receipt…');
+  openXForm(null,pre)},'Reading receipt');
 $('#xfSave').onclick=async()=>{if($('#xfAmt').value===''){$('#xfMsg').textContent='Enter the amount.';return}if(!$('#xfDate').value){$('#xfMsg').textContent='Enter the date.';return}
   const row={vendor:$('#xfVendor').value.trim(),expense_date:$('#xfDate').value,expense_time:$('#xfTime').value||null,amount:N($('#xfAmt').value),tax:N($('#xfTax').value),
     category:pget($('#xfCat'))||'Other',payment_method:$('#xfPay').value.trim(),notes:$('#xfNotes').value.trim()};
