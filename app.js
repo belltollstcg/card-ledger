@@ -1,4 +1,4 @@
-// Card Ledger Beta: same Supabase project, tables and login as the classic app in the folder above.
+// Card Ledger. The previous version of the app is kept in classic/ as a fallback; both use the same Supabase project, tables and login.
 // PSA data rules (PSA API licence): only verified, verified_at, name, year, set, grade and cert are
 // kept, only in cards.psa_data; each cert is looked up at most once and the stored result reused;
 // psa_data never goes into CSV exports or the backup zip.
@@ -44,7 +44,10 @@ fillIcons(document);
 // Every screen change is a browser history entry, so Android's back gesture (and the in-app back buttons, which
 // call history.back()) step through screens instead of closing the app. History looks like:
 //   [0] exit guard (root)  [1] Inventory  [2..] screens opened since
-// Backing into [0] from Inventory shows "Swipe back again to exit"; a second back within 2 seconds leaves.
+// Backing into [0] from Inventory shows "Swipe back again to exit"; a second back leaves.
+// Chrome's back gesture SKIPS entries a page adds without a recent tap, so entries are only ever added inside a
+// tap: the exit guard on the first tap, the scan screen when Take photo / Choose from photos is tapped. Anything
+// that happens later (photo read, save finished) replaces entries instead of adding them.
 const TABS=['inv','sold','exp','trades'];let cur='inv',idx=1,pendingHome=null,exitWarnAt=0;
 function render(v){$$('.view').forEach(s=>s.hidden=s.dataset.view!==v);cur=v;const tab=TABS.includes(v);$('#tabbar').hidden=!tab;
   if(tab)$$('#tabbar [data-tab]').forEach(b=>b.classList.toggle('on',b.dataset.tab===v));scrollTo(0,0)}
@@ -56,27 +59,43 @@ function show(v,{push=true,data=null,replace=false}={}){
   render(v)}
 const back=()=>history.back();
 // Finish a flow: go back to entry [1] (dropping the finished screens), then open the tab.
-function home(tab){return new Promise(res=>{if(idx<=1){show(tab);res();return}pendingHome={tab,res};history.go(-(idx-1))})}
-function initHistory(){idx=1;history.replaceState({v:'inv',idx:0,root:true},'');history.pushState({v:'inv',idx:1},'');render('inv')}
+// The tab replaces entry [1] (no new entry: this runs after a save, long after the tap).
+function home(tab){return new Promise(res=>{
+  if(idx<=1){if(idx===1)history.replaceState({v:tab,idx:1},'');render(tab);res();return}
+  pendingHome={tab,res};history.go(-(idx-1))})}
+// screens that can't be rebuilt from a history entry (their data was in memory)
+const TRANSIENT=['loading','scanned','add','sell','pick','trade','xform'];
+function initHistory(){const s=history.state;
+  if(s&&typeof s.idx==='number'){// the page was reloaded (Android can do this while the camera is open): keep its history
+    idx=s.idx;if(s.root){render('inv');armGuard();return}
+    if(TRANSIENT.includes(s.v)){history.replaceState({v:'inv',idx},'');render('inv');return}
+    return restore(s)}
+  history.replaceState({v:'inv',idx:0,root:true},'');idx=0;render('inv');armGuard()}
+// add the entry that keeps Inventory's back gesture inside the app, on the next tap
+function armGuard(){addEventListener('click',()=>{if(idx===0&&!pendingHome){idx=1;history.pushState({v:'inv',idx:1},'')}},{capture:true,once:true})}
+function restore(s){
+  if(s.v==='card'&&s.data)return openCard(s.data,{push:false});
+  if(s.v==='tview'&&s.data)return openTrade(s.data,{push:false});
+  if(s.v==='edit'&&s.data)return openEdit(s.data,{push:false});
+  render(s.v)}
 addEventListener('popstate',e=>{const s=e.state;if(!s||typeof s.idx!=='number')return;closeSheet();
-  if(s.root){// back pressed on Inventory
-    if(Date.now()-exitWarnAt<2000){idx=0;history.back();return}
-    exitWarnAt=Date.now();toast('Swipe back again to exit',2000);idx=1;history.pushState({v:'inv',idx:1},'');render('inv');return}
-  if(pendingHome){if(s.idx!==1)return;const p=pendingHome;pendingHome=null;idx=1;render('inv');if(p.tab!=='inv')show(p.tab);p.res();return}
+  if(s.root){// back pressed on Inventory: stay on the guard entry; the next back leaves, a tap re-arms the guard
+    idx=0;exitWarnAt=Date.now();toast('Swipe back again to exit',2000);render('inv');armGuard();return}
+  if(pendingHome){if(s.idx!==1)return;const p=pendingHome;pendingHome=null;idx=1;history.replaceState({v:p.tab,idx:1},'');render(p.tab);p.res();return}
   // leaving a trade in progress by gesture: ask first, and stay if they say no
   if(cur==='trade'&&s.idx<idx&&T&&(T.out.length||T.in.length)){
     if(!confirm('Discard this trade?')){idx=s.idx+1;history.pushState({v:'trade',idx},'');return}
     T.in.forEach(c=>c.url&&URL.revokeObjectURL(c.url));T=null}
   idx=s.idx;
-  if(s.v==='card'&&s.data)return openCard(s.data,{push:false});
-  if(s.v==='tview'&&s.data)return openTrade(s.data,{push:false});
-  if(s.v==='edit'&&s.data)return openEdit(s.data,{push:false});
-  render(s.v)});
+  if(TRANSIENT.includes(s.v)&&!stillOpen(s.v)){render('inv');return}// its data is gone (finished or cancelled)
+  restore(s)});
+// can this in-memory screen still be shown?
+function stillOpen(v){return v==='scanned'||v==='add'?!!S:v==='sell'?!!sellCard:v==='pick'?!!pickFn:v==='trade'?!!T:v==='xform'?true:false}
 document.addEventListener('click',e=>{if(e.target.closest('[data-back]'))back()});
 $$('#tabbar [data-tab]').forEach(b=>b.onclick=()=>show(b.dataset.tab));
 
 // bottom sheet
-function sheet(title,items){const s=$('#sheet');s.innerHTML='<div class="grab"></div>'+(title?`<h3>${esc(title)}</h3>`:'')+items.map((it,i)=>it.href
+function sheet(title,items,note){const s=$('#sheet');s.innerHTML='<div class="grab"></div>'+(title?`<h3>${esc(title)}</h3>`:'')+(note?`<div class="note" style="margin:6px 0 4px;color:var(--fg)">${note}</div>`:'')+items.map((it,i)=>it.href
    ?`<a class="si" href="${esc(it.href)}" data-si="${i}"><i class="ic" data-i="${it.icon}"></i>${esc(it.label)}</a>`
    :`<button class="si" data-si="${i}"><i class="ic" data-i="${it.icon}"></i>${esc(it.label)}</button>`).join('')+'<button class="link" data-si="x">Cancel</button>';
   fillIcons(s);s.hidden=$('#scrim').hidden=false;
@@ -86,8 +105,14 @@ $('#scrim').onclick=closeSheet;
 
 // photo picking: one camera input and one library input shared by every flow
 let onPhoto=null;
-function pickPhoto(title,fn){sheet(title,[{label:'Take photo',icon:'camera',fn:()=>{onPhoto=fn;$('#camIn').click()}},{label:'Choose from photos',icon:'image',fn:()=>{onPhoto=fn;$('#libIn').click()}}])}
-['#camIn','#libIn'].forEach(id=>$(id).onchange=e=>{const f=e.target.files[0];e.target.value='';if(f&&onPhoto)onPhoto(f)});
+// loading: text for a loading screen opened in the same tap (so its history entry counts); cancelling the picker closes it
+let pickLoading=false;
+function pickPhoto(title,fn,loading){const go=input=>{onPhoto=fn;pickLoading=!!loading;
+    if(loading){$('#loadTxt').textContent=loading;$('#loadSub').textContent='';show('loading',{replace:cur==='scanned'})}
+    $(input).click()};
+  sheet(title,[{label:'Take photo',icon:'camera',fn:()=>go('#camIn')},{label:'Choose from photos',icon:'image',fn:()=>go('#libIn')}])}
+['#camIn','#libIn'].forEach(id=>{$(id).onchange=e=>{const f=e.target.files[0];e.target.value='';pickLoading=false;if(f&&onPhoto)onPhoto(f);else if(cur==='loading')back()};
+  $(id).addEventListener('cancel',()=>{if(pickLoading&&cur==='loading'){pickLoading=false;back()}})});
 async function shrink(file){const img=await createImageBitmap(file),k=Math.min(1,1280/Math.max(img.width,img.height));
   const c=document.createElement('canvas');c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);
   c.getContext('2d').drawImage(img,0,0,c.width,c.height);return new Promise(r=>c.toBlob(r,'image/jpeg',.85))}
@@ -135,20 +160,23 @@ let installEvt=null;const isStandalone=()=>matchMedia('(display-mode: standalone
 const bannerOff=()=>{try{return localStorage.getItem('installBannerDismissed')==='1'}catch{return false}};
 function updInstall(){$('#installBanner').hidden=!(installEvt&&!isStandalone()&&!bannerOff())}
 addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEvt=e;updInstall()});
-addEventListener('appinstalled',()=>{installEvt=null;updInstall();toast('Card Ledger Beta installed')});
+addEventListener('appinstalled',()=>{installEvt=null;updInstall();toast('Card Ledger installed')});
 matchMedia('(display-mode: standalone)').addEventListener?.('change',updInstall);
 async function installApp(){if(!installEvt)return;const e=installEvt;installEvt=null;updInstall();try{await e.prompt();await e.userChoice}catch{}}
 $('#installGo').onclick=installApp;
+// Chrome hasn't offered its own prompt (it waits for some use, and never offers an installed app): explain the manual way
+function installHelp(){sheet('Install Card Ledger',[],`In Chrome, tap the <b>⋮</b> menu (top right), then <b>Install app</b> or <b>Add to home screen</b>.<br><br>`+
+  `If Chrome doesn't offer it, Card Ledger is probably already installed: check your home screen and app list.`)}
 $('#installX').onclick=()=>{try{localStorage.setItem('installBannerDismissed','1')}catch{}updInstall()};
-if('serviceWorker' in navigator&&location.protocol!=='file:')navigator.serviceWorker.register('sw.js').catch(()=>{});
+if('serviceWorker' in navigator&&location.protocol!=='file:')navigator.serviceWorker.register('sw.js',{scope:'./',updateViaCache:'none'}).catch(()=>{});
 
 // ---------- menu ----------
 $$('[data-menu]').forEach(b=>b.onclick=()=>sheet('Card Ledger',[
-  ...(installEvt&&!isStandalone()?[{label:'Install app',icon:'download',fn:installApp}]:[]),
+  ...(!isStandalone()?[{label:'Install app',icon:'download',fn:()=>installEvt?installApp():installHelp()}]:[]),
   {label:'Export cards CSV',icon:'download',fn:()=>dl(new Blob([cardsCsv(cards,null,trades)],{type:'text/csv'}),'card-ledger.csv')},
   {label:'Export trades CSV',icon:'download',fn:()=>dl(new Blob([tradesCsv([...trades].reverse(),cards)],{type:'text/csv'}),'card-ledger-trades.csv')},
   {label:'Backup everything (zip)',icon:'archive',fn:backup},
-  {label:'Open classic app',icon:'home',href:'../'},
+  {label:'Open classic app',icon:'home',href:'classic/'},
   {label:'Sign out',icon:'logout',fn:()=>sb.auth.signOut()}]));
 
 // ---------- inventory ----------
@@ -251,9 +279,9 @@ function fromRead(d){const set=String(d.set||'').trim(),y=set.match(/\b(19|20)\d
     year:y?y[0]:'',set:y?set.replace(y[0],'').replace(/\s{2,}/g,' ').trim():set}}
 function withPsa(d,p){if(!p||!p.verified)return d;return{...d,grader:'PSA',cert:p.cert||d.cert,name:tc(p.name)||d.name,year:p.year||d.year,set:tc(p.set)||d.set,grade:gradeNum(p.grade)||d.grade}}
 const joinSet=(year,set)=>year&&!String(set).includes(year)?`${year} ${set}`.trim():String(set||'').trim();
-$('#scanBtn').onclick=()=>pickPhoto('Scan a slab',scanFile);
-$('#scRescan').onclick=()=>pickPhoto('Scan a slab',scanFile);
-async function scanFile(file){if(S?.url)URL.revokeObjectURL(S.url);S=null;$('#loadTxt').textContent='Reading slab…';$('#loadSub').textContent='';show('loading',{replace:cur==='scanned'});// a rescan replaces the old result
+$('#scanBtn').onclick=()=>pickPhoto('Scan a slab',scanFile,'Reading slab…');
+$('#scRescan').onclick=()=>pickPhoto('Scan a slab',scanFile,'Reading slab…');
+async function scanFile(file){if(S?.url)URL.revokeObjectURL(S.url);S=null;$('#loadTxt').textContent='Reading slab…';if(cur!=='loading')show('loading',{replace:true});// a rescan replaces the old result
   let blob,d={grader:'',grade:'',cert:'',name:'',year:'',set:''},msg='';
   try{blob=await shrink(file)}catch{toast('Could not open that photo');back();return}
   try{d=fromRead(await readSlab(blob))}catch{msg='Could not read the slab. Fill in the details by hand.'}
@@ -445,11 +473,12 @@ function renderTOut(){$('#trOutList').innerHTML=T.out.map((o,i)=>{const c=cardBy
   `<div class="kv"><span>Trade value</span><input class="v" data-ov="${i}" type="number" step="0.01" min="0" inputmode="decimal" placeholder="$0.00" value="${esc(o.value)}"></div></div>`}).join('');fillIcons($('#trOutList'));renderBal()}
 $('#trOutList').oninput=e=>{const i=e.target.dataset.ov;if(i!=null){T.out[i].value=e.target.value;renderBal()}};
 $('#trOutList').onclick=e=>{const b=e.target.closest('[data-orm]');if(b){T.out.splice(+b.dataset.orm,1);renderTOut()}};
-$('#trOutPick').onclick=()=>{const used=new Set(T.out.map(o=>String(o.id)));openPick(cards.filter(c=>c.status==='inventory'&&!used.has(String(c.id))),'Pick a card you’re giving up.',id=>{addOut(id);back()})};
+$('#trOutPick').onclick=()=>{const used=new Set(T.out.map(o=>String(o.id))),st=cards.filter(c=>c.status==='inventory'&&!used.has(String(c.id))),m=T.match&&st.filter(c=>T.match.includes(String(c.id)));
+  T.match=null;openPick(m&&m.length?m:st,m&&m.length?`${m.length} in-stock cards have that cert. Pick the one you’re giving up.`:'Pick a card you’re giving up.',id=>{addOut(id);back()})};
 $('#trOutScan').onclick=()=>pickPhoto('Scan a slab you’re giving up',async f=>{const t=T;$('#trOutMsg').textContent='Reading slab…';
   try{const d=fromRead(await readSlab(await shrink(f)));if(T!==t)return;const used=new Set(T.out.map(o=>String(o.id))),ms=d.cert?cards.filter(c=>c.status==='inventory'&&!used.has(String(c.id))&&String(c.cert).trim()===d.cert):[];
     if(ms.length===1)addOut(ms[0].id);
-    else if(ms.length>1)openPick(ms,`${ms.length} in-stock cards have cert ${d.cert}. Pick the one you’re giving up.`,id=>{addOut(id);back()});
+    else if(ms.length>1){T.match=ms.map(c=>String(c.id));$('#trOutMsg').textContent=`${ms.length} in-stock cards have cert ${d.cert}. Tap From list to pick which one.`}
     else $('#trOutMsg').textContent=d.cert&&cards.some(c=>used.has(String(c.id))&&String(c.cert).trim()===d.cert)?'That card is already in this trade.':`No in-stock card with cert ${d.cert||'?'}. Use From list.`}
   catch{if(T===t)$('#trOutMsg').textContent='Could not read that photo. Use From list.'}});
 // in
@@ -483,7 +512,7 @@ async function saveTrade(){const k=tradeCalc(),diff=r2(k.vo+k.paid-k.vi-k.recv);
     // record_trade() doesn't know about psa_data; attach verified PSA results to the new cards afterwards
     const tid=data?.trade_id;
     if(tid)for(const c of T.in){const p=psaFor(c.psa,c.cert.trim());if(p)await sb.from('cards').update({psa_data:p}).eq('acquired_trade_id',tid).eq('cert',c.cert.trim())}
-    T.in.forEach(c=>c.url&&URL.revokeObjectURL(c.url));T=null;toast('Trade saved');await home('trades');await load();if(tid)openTrade(tid)}
+    T.in.forEach(c=>c.url&&URL.revokeObjectURL(c.url));T=null;toast('Trade saved');await home('trades');await load()}
   catch(e){if(uploaded.length)sb.storage.from('slabs').remove(uploaded);$('#trMsg').textContent='Trade not saved: '+(e.message||e)}
   finally{btn.disabled=false}}
 
@@ -518,11 +547,11 @@ function openXForm(e,pre){xEditing=e||null;const d=e||pre||{};
   pset($('#xfCat'),d.category&&CATS.includes(d.category)?d.category:d.category?'Other':null);
   const u=e?rurls[e.photo]:xUrl;$('#xfImg').hidden=!u;if(u)$('#xfImg').src=u;$('#xfDel').hidden=!e;$('#xfMsg').textContent=pre&&pre.msg||'';show('xform')}
 $('#xAddHand').onclick=()=>{xBlob=xRaw=null;if(xUrl)URL.revokeObjectURL(xUrl);xUrl=null;openXForm(null,{})};
-$('#xAdd').onclick=()=>pickPhoto('Add a receipt',async f=>{if(xUrl)URL.revokeObjectURL(xUrl);xRaw=null;$('#loadTxt').textContent='Reading receipt…';show('loading');
+$('#xAdd').onclick=()=>pickPhoto('Add a receipt',async f=>{if(xUrl)URL.revokeObjectURL(xUrl);xRaw=null;$('#loadTxt').textContent='Reading receipt…';if(cur!=='loading')show('loading',{replace:true});
   let pre={msg:''};try{xBlob=await shrink(f);xUrl=URL.createObjectURL(xBlob);const{data,error}=await sb.functions.invoke('read-receipt',{body:{image:await b64(xBlob)}});if(error)throw error;const d=data||{};xRaw=d;
     pre={vendor:d.vendor||'',expense_date:isoDate(d.date)||today(),expense_time:hhmm(d.time),amount:num(d.total),tax:num(d.tax),category:matchCat(d.category),payment_method:d.payment_method||'',notes:d.summary||'',msg:'Check the details, then save.'}}
   catch{pre={msg:'Could not read the receipt. Enter the details by hand.'}}
-  openXForm(null,pre)});
+  openXForm(null,pre)},'Reading receipt…');
 $('#xfSave').onclick=async()=>{if($('#xfAmt').value===''){$('#xfMsg').textContent='Enter the amount.';return}if(!$('#xfDate').value){$('#xfMsg').textContent='Enter the date.';return}
   const row={vendor:$('#xfVendor').value.trim(),expense_date:$('#xfDate').value,expense_time:$('#xfTime').value||null,amount:N($('#xfAmt').value),tax:N($('#xfTax').value),
     category:pget($('#xfCat'))||'Other',payment_method:$('#xfPay').value.trim(),notes:$('#xfNotes').value.trim()};
