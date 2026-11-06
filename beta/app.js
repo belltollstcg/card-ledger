@@ -147,14 +147,47 @@ function certLink(grader,cert){const g=gnorm(grader),c=enc(String(cert||'').trim
   if(g==='CGC')return{label:'CGC',url:'https://www.cgccards.com/certlookup/'+c+'/'};
   if(g==='BGS'){const s=String(grader).toUpperCase(),t=s.startsWith('BVG')?'BVG':s.startsWith('BCCG')?'BCCG':'BGS';return{label:'BGS',url:'https://www.beckett.com/grading/card-lookup?item_id='+c+'&item_type='+t}}
   return null}
-function valueLinks(c){const phrase=[c.name,c.grader,c.grade].filter(Boolean).join(' ').replace(/\s+/g,' ').trim(),cert=String(c.cert||'').trim(),g=(gnorm(c.grader)||'psa').toLowerCase();
-  return[cert?{label:'Card Ladder',url:`https://app.cardladder.com/search?cert=${enc(cert)}&grader=${enc(g)}`}
-             :{label:'Card Ladder',url:'https://app.cardladder.com/',copy:phrase,toast:'Search text copied'},
-    {label:'ALT',url:'https://alt.xyz/browse?query='+enc(phrase),copy:phrase,toast:'Search text copied'},
-    {label:'eBay',url:'https://www.ebay.com/sch/i.html?_nkw='+enc(phrase)+'&LH_Sold=1&LH_Complete=1'}]}
+// ---- detailed search text: name, card number, set, year, variants, language, "GRADER GRADE" (PSA's details win when verified)
+const VARIANTS=[['1st Edition',/\b1st\s*ed(ition|\.)?\b|\bfirst\s+edition\b/i],['Shadowless',/\bshadowless\b/i],['Reverse Holo',/\brev(erse|\.)?\s*-?\s*holo(foil)?\b/i],
+  ['Holo',/\bholo(foil)?\b/i],['Unlimited',/\bunlimited\b/i],['Full Art',/\bfull\s*art\b/i],['Alt Art',/\balt(ernate)?\.?\s*art\b/i],['Secret Rare',/\bsecret\s*rare\b/i],
+  ['Promo',/\bpromo\b/i],['Staff',/\bstaff\b/i],['Prerelease',/\bpre-?release\b/i],['Error',/\berror\b/i]];
+const LANGS=['Japanese','Korean','Chinese','German','French','Italian','Spanish','Portuguese','Dutch','Indonesian','Thai'];
+// c: {name,set,year,grader,grade,cert,psa}
+function searchParts(c){const p=c.psa&&c.psa.verified&&String(c.psa.cert)===String(c.cert||'').replace(/\D/g,'')?c.psa:null;
+  let name=String(p&&p.name?tc(p.name):c.name||''),set=String(p&&p.set?tc(p.set):c.set||'');
+  let year=String(p&&p.year?p.year:c.year||'');const ys=set.match(/\b(19|20)\d{2}\b/);if(!year&&ys)year=ys[0];
+  const all=name+' '+set,num=((all.match(/\b(\d{1,3}\s*\/\s*\d{1,3})\b/)||all.match(/#\s?([A-Z]{0,3}\d{1,4})\b/i)||[])[1]||'').replace(/\s/g,'');
+  let variants=VARIANTS.filter(([,re])=>re.test(all)).map(([v])=>v);if(variants.includes('Reverse Holo'))variants=variants.filter(v=>v!=='Holo');
+  const lang=LANGS.find(l=>new RegExp('\\b'+l+'\\b','i').test(all))||'';
+  const strip=t=>{VARIANTS.forEach(([,re])=>t=t.replace(new RegExp(re.source,'gi'),' '));LANGS.forEach(l=>t=t.replace(new RegExp('\\b'+l+'\\b','gi'),' '));
+    return t.replace(/\b(19|20)\d{2}\b/g,' ').replace(/\b\d{1,3}\s*\/\s*\d{1,3}\b/g,' ').replace(/#\s?[A-Z]{0,3}\d{1,4}\b/gi,' ').replace(/[-–]+(?=\s|$)|(?<=\s|^)[-–]+/g,' ').replace(/\s{2,}/g,' ').trim()};
+  name=strip(name);set=strip(set).replace(/^pokemon\s+game$/i,'Base Set').replace(/^pokemon\s+/i,'').trim();
+  if(set&&name.toLowerCase().includes(set.toLowerCase()))set='';
+  const g=gnorm(c.grader)||String(c.grader||'').trim(),gr=gradeNum(c.grade);
+  return{name,num,set,year,variants,lang,grader:g,grade:gr,gradeLabel:g&&gr?`"${g} ${gr}"`:''}}
+const searchText=sp=>[sp.name,sp.num,sp.set,sp.year,...sp.variants,sp.lang,sp.gradeLabel].filter(Boolean).join(' ').replace(/\s{2,}/g,' ').trim();
+const EBAY_NOISE='-lot -proxy -custom -reprint';
+// eBay writes aspect filters double-encoded in its URLs, with ( ) as %2528 / %2529
+const ebayAspect=v=>enc(enc(v).replace(/\(/g,'%28').replace(/\)/g,'%29'));
+const EBAY_GRADER={PSA:'Professional Sports Authenticator (PSA)',BGS:'Beckett Grading Services (BGS)'};
+function ebayUrl(sp){let u='https://www.ebay.com/sch/i.html?_nkw='+enc(searchText(sp)+' '+EBAY_NOISE).replace(/%20/g,'+')+'&_sacat=183454&LH_Sold=1&LH_Complete=1';
+  if(sp.grader){u+='&Graded=Yes';if(EBAY_GRADER[sp.grader])u+='&Professional%2520Grader='+ebayAspect(EBAY_GRADER[sp.grader]);if(/^\d+(\.5)?$/.test(sp.grade))u+='&Grade='+ebayAspect(sp.grade)}
+  if(sp.lang)u+='&Language='+ebayAspect(sp.lang);return u}
+const isAndroid=/Android/i.test(navigator.userAgent);
+const CARDLADDER_APP='intent://#Intent;package=com.ladderstudios.cardladder;S.browser_fallback_url='+enc('https://www.cardladder.com')+';end';
+// value links + the exact text each one searches for
+function valueLinks(c){const sp=searchParts(c),text=searchText(sp),cert=String(c.cert||'').replace(/\D/g,''),altCert=cert&&(sp.grader==='PSA'||sp.grader==='BGS');
+  const links=[
+    {label:'Card Ladder',url:isAndroid?CARDLADDER_APP:(cert?`https://app.cardladder.com/search?cert=${cert}&grader=${enc((sp.grader||'psa').toLowerCase())}`:'https://www.cardladder.com'),
+      copy:cert||text,toast:cert?'Cert copied, paste in Card Ladder':'Search text copied, paste in Card Ladder'},
+    {label:'ALT',url:'https://alt.xyz/browse?query='+enc(altCert?cert:text),copy:altCert?cert:text,toast:altCert?'Cert copied, paste in ALT':'Search text copied, paste in ALT'},
+    {label:'eBay',url:ebayUrl(sp)}];
+  const lines=[`eBay sold: ${text} ${EBAY_NOISE}`,`ALT: ${altCert?'cert '+cert:text}`,`Card Ladder: ${cert?'cert '+cert:text}`];
+  return{links,lines}}
 const linkPill=l=>`<a class="pill sm" href="${esc(l.url)}" target="_blank" rel="noopener"${l.copy?` data-copy="${esc(l.copy)}" data-toast="${esc(l.toast)}"`:''}>${esc(l.label)}${icon('ext',16)}</a>`;
-// copy first (same tap), then the plain https link opens normally so Android can hand it to the app
-document.addEventListener('click',e=>{const a=e.target.closest('a[data-copy]');if(a&&a.dataset.copy)copyText(a.dataset.copy).then(ok=>{if(ok)toast(a.dataset.toast||'Copied')})},true);
+const queryLines=lines=>lines.map(t=>`<div>${esc(t)}</div>`).join('');
+// copy first (same tap), then the link opens normally so Android can hand it to the app
+document.addEventListener('click',e=>{const a=e.target.closest('a[data-copy]');if(a&&a.dataset.copy)copyText(a.dataset.copy).then(ok=>{if(ok)toast(a.dataset.toast||'Copied',3000)})},true);
 
 // ---------- PSA verification ----------
 // Only these fields are ever kept, and only in cards.psa_data.
@@ -194,7 +227,7 @@ function fillScanned(msg){const d=S.shown;$('#scImg').src=S.url;$('#scName').val
   $('#scGrader').value=d.grader;$('#scGrade').value=d.grade;$('#scCert').value=d.cert;$('#scMsg').textContent=msg||'';updScanned()}
 function updScanned(){const v=scanVals(),p=psaFor(S.psa,v.cert);$('#scBadge').hidden=!(p&&p.verified&&gnorm(v.grader)==='PSA');
   const cl=certLink(v.grader,v.cert);$('#scCertLink').hidden=!cl;if(cl){$('#scCertLink').href=cl.url;$('#scCertLabel').textContent='View card on '+cl.label}
-  $('#scValue').innerHTML=valueLinks(v).map(linkPill).join('');fitName()}
+  const vl=valueLinks({...v,psa:S.psa});$('#scValue').innerHTML=vl.links.map(linkPill).join('');$('#scQ').innerHTML=queryLines(vl.lines);fitName()}
 function fitName(){const n=$('#scName');if(!n.offsetParent)return;n.style.height='auto';n.style.height=n.scrollHeight+'px'}
 ['#scName','#scYear','#scSet','#scGrader','#scGrade','#scCert'].forEach(id=>$(id).addEventListener('input',updScanned));
 // a corrected PSA cert gets checked too (once per cert)
@@ -273,7 +306,8 @@ function openCard(id,{push=true}={}){const c=cardById(id);if(!c){if(cur==='card'
   if(c.status==='traded')ev.push({t:'Traded away',d:tradeDate(c.disposed_trade_id),s:`Trade value ${money(c.trade_value_out)}`,d2:1});
   if(c.status==='inventory')ev.push({t:'In stock',d:'',s:d!=null?`Held ${pl(d,'day')}`:'',d2:1});
   $('#cdTl').innerHTML=ev.map(e=>`<div class="ev"><div class="dot${e.d2?' d2':''}"></div><div><b>${e.t}${e.d?' · '+fmtDate(e.d):''}</b><small>${esc(e.s)}</small></div></div>`).join('');
-  const cl=certLink(c.grader,c.cert),lk=valueLinks(dc).slice(0,2);if(cl)lk.push({label:cl.label+' cert',url:cl.url});$('#cdLinks').innerHTML=lk.map(linkPill).join('');
+  const vl=valueLinks({name:c.name,set:c.set_name,year:'',grader:c.grader,grade:c.grade,cert:c.cert,psa:c.psa_data}),cl=certLink(c.grader,c.cert),lk=[...vl.links];
+  if(cl)lk.push({label:cl.label+' cert',url:cl.url});$('#cdLinks').innerHTML=lk.map(linkPill).join('');$('#cdQ').innerHTML=queryLines(vl.lines);
   const act=[];if(c.status==='inventory')act.push('<div class="btns2"><button class="btn" id="cdSell">Sell</button><button class="btn dark" id="cdTrade">Trade</button></div>');
   if(c.acquired_trade_id&&tradeOf(c.acquired_trade_id))act.push(`<button class="link" data-trade="${esc(c.acquired_trade_id)}">View the trade it came from</button>`);
   if(c.disposed_trade_id&&tradeOf(c.disposed_trade_id))act.push(`<button class="link" data-trade="${esc(c.disposed_trade_id)}">View the trade it went out in</button>`);

@@ -146,7 +146,11 @@ python3 -m http.server 8000
 A redesigned version of the app lives in `beta/` (`index.html`, `app.js`, its own `manifest.json` named "Card Ledger Beta" and `icon.svg`), so it can be installed on Android separately from the classic app. It uses the same Supabase project, tables, login, buckets and functions. The classic app at the root is unchanged.
 
 - Dark collector design with a bottom tab bar: Inventory, Sold, a gold **Scan** button, Expenses and Trades.
-- **Scan** reads a slab with `read-slab`, then shows the card with links to the grader's cert page, Card Ladder (searched by cert), ALT and eBay sold listings. From there: **Add to inventory** (price paid, fees, date, "Bought from") or **Sell** (sold for, fees, date, "Sold on", live profit preview).
+- **Scan** reads a slab with `read-slab`, then shows the card with links to the grader's cert page, Card Ladder (searched by cert), ALT and eBay sold listings.
+- **Value links** (Scanned and Card detail screens). The exact text each link searches for is shown under the buttons.
+  - **Card Ladder:** copies the cert ("Cert copied, paste in Card Ladder") and opens the installed Android app (`intent://…package=com.ladderstudios.cardladder`), falling back to cardladder.com. On other devices it opens Card Ladder's cert search page.
+  - **ALT:** for PSA and BGS slabs, copies the cert, since ALT's search accepts PSA/BGS cert numbers but has no search link. For other graders, copies the detailed search text. Either way it then opens ALT.
+  - **eBay:** sold listings in Collectible Card Games individual cards (category 183454). The search is built from name, card number, set, year, variant, language and the grade in quotes (e.g. `"PSA 10"`), using PSA's verified details when present, with `-lot -proxy -custom -reprint`. It adds eBay's Graded, Professional Grader (PSA, BGS) and Grade filters, plus Language for non-English cards. From there: **Add to inventory** (price paid, fees, date, "Bought from") or **Sell** (sold for, fees, date, "Sold on", live profit preview).
 - Card detail, edit and delete, Sold with My view / Tax view, Expenses, Trades (new, view, delete), CSV exports and Backup all work as in the classic app.
 - New columns used: `cards.bought_from`, `cards.sold_platform`, `cards.psa_data`.
 
