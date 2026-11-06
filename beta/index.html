@@ -111,6 +111,7 @@ nav .tbi{max-width:560px;margin:0 auto;display:flex;align-items:flex-end;padding
 .login h1{font-size:34px}.login p{color:var(--mut);margin:6px 0 20px}
 .note{background:var(--tile);border-radius:14px;padding:12px 14px;color:var(--mut);font-size:14px;margin-top:10px}
 .iconbtn{background:none;border:0;color:var(--mut);width:44px;height:44px;display:grid;place-items:center;flex:none}
+.qtext{color:var(--mut);font-size:12px;line-height:1.45;margin:2px 4px 0;overflow-wrap:anywhere}.qtext div+div{margin-top:3px}
 .empty{color:var(--mut);text-align:center;padding:36px 10px}
 </style></head><body>
 
@@ -178,7 +179,7 @@ nav .tbi{max-width:560px;margin:0 auto;display:flex;align-items:flex-end;padding
   <div class="kv"><span>Cert #</span><input class="v" id="scCert" inputmode="numeric" placeholder="Cert number"></div>
   <a class="kv lnk" id="scCertLink" target="_blank" rel="noopener"><span class="gold" id="scCertLabel">View card on PSA</span><i class="ic" data-i="ext"></i></a>
  </div>
- <div class="sub">Check value</div><div class="pills" id="scValue" style="padding-top:0"></div>
+ <div class="sub">Check value</div><div class="pills" id="scValue" style="padding-top:0"></div><div class="qtext" id="scQ"></div>
  <div class="msg" id="scMsg"></div>
  <button class="btn" id="scAdd">Add to inventory</button>
  <button class="btn dark" id="scSell">Sell</button>
@@ -235,7 +236,7 @@ nav .tbi{max-width:560px;margin:0 auto;display:flex;align-items:flex-end;padding
  <div class="center" style="margin-top:18px"><h2 id="cdName"></h2><div class="mut" id="cdSub" style="margin-top:4px"></div><div id="cdBadge" class="badge" hidden><i class="ic" data-i="verified"></i>Verified with PSA</div></div>
  <div class="tiles three" style="margin-top:18px"><div class="tile"><small>Paid</small><b id="cdPaid"></b></div><div class="tile"><small>Held</small><b id="cdHeld"></b></div><div class="tile"><small>Source</small><b id="cdSrc"></b></div></div>
  <div class="sub">History</div><div class="panel"><div class="tl" id="cdTl"></div></div>
- <div class="pills" id="cdLinks"></div>
+ <div class="pills" id="cdLinks"></div><div class="qtext" id="cdQ"></div>
  <div id="cdActions"></div>
 </section>
 
