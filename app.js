@@ -1,4 +1,4 @@
-// Card Ledger Beta: same Supabase project, tables and login as the classic app in the folder above.
+// Card Ledger. The previous version of the app is kept in classic/ as a fallback; both use the same Supabase project, tables and login.
 // PSA data rules (PSA API licence): only verified, verified_at, name, year, set, grade and cert are
 // kept, only in cards.psa_data; each cert is looked up at most once and the stored result reused;
 // psa_data never goes into CSV exports or the backup zip.
@@ -160,15 +160,15 @@ let installEvt=null;const isStandalone=()=>matchMedia('(display-mode: standalone
 const bannerOff=()=>{try{return localStorage.getItem('installBannerDismissed')==='1'}catch{return false}};
 function updInstall(){$('#installBanner').hidden=!(installEvt&&!isStandalone()&&!bannerOff())}
 addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEvt=e;updInstall()});
-addEventListener('appinstalled',()=>{installEvt=null;updInstall();toast('Card Ledger Beta installed')});
+addEventListener('appinstalled',()=>{installEvt=null;updInstall();toast('Card Ledger installed')});
 matchMedia('(display-mode: standalone)').addEventListener?.('change',updInstall);
 async function installApp(){if(!installEvt)return;const e=installEvt;installEvt=null;updInstall();try{await e.prompt();await e.userChoice}catch{}}
 $('#installGo').onclick=installApp;
 // Chrome hasn't offered its own prompt (it waits for some use, and never offers an installed app): explain the manual way
-function installHelp(){sheet('Install Card Ledger Beta',[],`In Chrome, tap the <b>⋮</b> menu (top right), then <b>Install app</b> or <b>Add to home screen</b>.<br><br>`+
-  `If Chrome doesn't offer it, the beta may already be installed (check your home screen and app list), or this page may have opened inside the classic Card Ledger app. Open the beta link in a Chrome tab to install it.`)}
+function installHelp(){sheet('Install Card Ledger',[],`In Chrome, tap the <b>⋮</b> menu (top right), then <b>Install app</b> or <b>Add to home screen</b>.<br><br>`+
+  `If Chrome doesn't offer it, Card Ledger is probably already installed: check your home screen and app list.`)}
 $('#installX').onclick=()=>{try{localStorage.setItem('installBannerDismissed','1')}catch{}updInstall()};
-if('serviceWorker' in navigator&&location.protocol!=='file:')navigator.serviceWorker.register('sw.js').catch(()=>{});
+if('serviceWorker' in navigator&&location.protocol!=='file:')navigator.serviceWorker.register('sw.js',{scope:'./',updateViaCache:'none'}).catch(()=>{});
 
 // ---------- menu ----------
 $$('[data-menu]').forEach(b=>b.onclick=()=>sheet('Card Ledger',[
@@ -176,7 +176,7 @@ $$('[data-menu]').forEach(b=>b.onclick=()=>sheet('Card Ledger',[
   {label:'Export cards CSV',icon:'download',fn:()=>dl(new Blob([cardsCsv(cards,null,trades)],{type:'text/csv'}),'card-ledger.csv')},
   {label:'Export trades CSV',icon:'download',fn:()=>dl(new Blob([tradesCsv([...trades].reverse(),cards)],{type:'text/csv'}),'card-ledger-trades.csv')},
   {label:'Backup everything (zip)',icon:'archive',fn:backup},
-  {label:'Open classic app',icon:'home',href:'../'},
+  {label:'Open classic app',icon:'home',href:'classic/'},
   {label:'Sign out',icon:'logout',fn:()=>sb.auth.signOut()}]));
 
 // ---------- inventory ----------

@@ -1,31 +1,51 @@
 # Card Ledger
 
-A phone-friendly web app for tracking graded Pokémon cards you buy and sell. Take a photo of a slab, and the app reads the grader, grade, cert number, card name and set for you. It keeps your inventory, records sales, and works out profit per card and in total.
+A phone-first web app for buying, selling and trading graded Pokémon cards. Scan a slab and the app reads the grader, grade, cert number, card name and set for you. PSA slabs are verified with PSA. It keeps your inventory, records sales and trades, tracks expenses, and works out profit in two ways (cash only, or tax view at market value).
 
-The app is a single static page hosted on **GitHub Pages**. **Supabase** handles everything on the back end: the database, login, slab and receipt photo storage, and the `read-slab` and `read-receipt` edge functions that read those photos.
+The app is static files hosted on **GitHub Pages**. **Supabase** does everything on the back end: the database, login, slab and receipt photo storage, and the `read-slab`, `read-receipt` and `psa-cert` edge functions.
+
+The previous version of the app is kept at **`/classic/`** as a fallback. It uses the same Supabase project, tables and login. The old `/beta/` address now redirects to the main app.
 
 ## Features
 
-- **Buy**: take a photo of a slab or pick one from your library. The `read-slab` function fills in grader, grade, cert number, card name and set. Then you add the price paid, fees and date, and save the card to inventory. The photo goes to storage with the card.
-- **Sell**: photograph the slab to find the matching in-stock card by cert number, or pick it from a list. Enter the sale price, fees and date, and mark it sold.
-- **Trade**: tap **Trade cards instead** on the Sell tab for a 3-step flow:
-  1. **Cards going out**: scan each slab to match an in-stock card by cert, or pick it from the list, and enter a trade value for each.
-  2. **Cash**: trade date, cash you paid and cash you received.
-  3. **Cards coming in**: take or choose a photo of each slab (read by `read-slab`) or add one by hand, check the fields, and enter a trade value for each. Optional counterparty and notes.
-
-  A balance check compares (values out + cash paid) with (values in + cash received). It warns when they differ but still lets you save. The whole trade is saved in one transaction by the `record_trade` database function (see below).
-- **Inventory**: the cards you have in stock, with slab thumbnails and the stock value at cost (plus market-value basis when traded-in cards make it differ). Traded-in cards show "From trade on <date>". Tap a card to edit it, or use the **Sell this card** box at the top of that screen: enter the sold price, fees and date, tap **Mark as sold**, and the card moves to the Sold tab.
-- **Sold**: cards sold or traded away, newest first by the date sold or traded. Each shows its sale price, or its trade value with a **Traded** label, and its profit. At the top are the My view / Tax view toggle and totals for revenue, cards traded away and net profit. Below the cards, a **Trades** list shows every trade; tap one to see the full trade (cards out, cards in, cash and both cost bases). **Delete trade** on that screen undoes it: cards you traded away go back to in stock, and the cards you received are deleted with their photos. It's refused if a received card has since been sold or traded again; undo that first. The export and backup buttons are at the bottom of this tab.
-- **Profit views**: a toggle at the top of the Sold tab.
+- **Design**: dark collector look built for speed at card shows. The bottom tab bar has Inventory, Sold, a raised gold **Scan** button, Expenses and Trades.
+- **Inventory**: in-stock count and stock value, search, PSA / CGC / BGS filters, and a 2-column gallery of slab photos with "Paid $X · Nd held". Tap a card for its detail screen.
+- **Scan** (gold button): take a photo of a slab or choose one. `read-slab` reads it, and PSA slabs are checked with `psa-cert`.
+  - The **Scanned** screen shows the photo with name, year and set, a "Verified with PSA" badge, grade and cert, a link to the grader's cert page, and value links.
+  - From there:
+    - **Add to inventory**: a big "Price paid" number, fees / shipping, date, and "Bought from" pills. A duplicate-cert warning appears with **Save anyway**.
+    - **Sell**: a big "Sold for" number, fees, date, "Sold on" pills, and a live profit / paid / days-held preview. If several in-stock cards share the cert, you pick which one.
+  - Any misread field can be fixed by tapping it.
+- **Value links** (Scanned and Card detail screens). The exact text each link searches for is shown under the buttons.
+  - **Card Ladder:** copies the cert ("Cert copied, paste in Card Ladder") and opens the installed Android app (`intent://…package=com.ladderstudios.cardladder`), falling back to cardladder.com. Other devices open Card Ladder's cert search page.
+  - **ALT:** for PSA and BGS slabs, copies the cert, since ALT's search accepts PSA/BGS cert numbers but has no search link. For other graders, copies the detailed search text. Either way it then opens ALT.
+  - **eBay:** sold listings in Collectible Card Games individual cards (category 183454).
+    - The search is built from name, card number, set, year, variant, language and the grade in quotes (e.g. `"PSA 10"`), using PSA's verified details when present, with `-lot -proxy -custom -reprint`.
+    - It adds eBay's Graded, Professional Grader (PSA, BGS) and Grade filters, plus Language for non-English cards.
+- **Card detail**: large photo, Paid / Held / Source tiles, a timeline (bought, sold or traded), value links, and **Sell** and **Trade** buttons. The pencil icon opens **Edit**, where you can change any field, change the status (which moves the card between Inventory and Sold), or delete the card with its photo. A traded card's status is locked to Traded; delete the trade to put it back in stock.
+- **Sold**: cards sold or traded away, newest first, with the **My view / Tax view** toggle, revenue and net profit.
   - **My view** (carryover): profit counts only when a card is sold for cash. Cards you trade for carry over the cost of what you gave up.
   - **Tax view** (market value): a trade counts as selling the outgoing cards and buying the incoming ones at their trade values on the trade date. A sale's profit uses the card's market-value basis.
+  - Purchased cards use cost + fees in both views.
+- **Trades**: **New trade** runs a 3-step flow:
+  1. **Cards going out**: scan a slab or pick from the list, and enter a trade value for each.
+  2. **Cash**: trade date, cash paid and cash received.
+  3. **Cards coming in**: take or choose a photo of each slab (read by `read-slab`, verified with PSA) or add one by hand, and enter a trade value for each. Optional counterparty and notes.
 
-  Purchased cards use cost + fees in both views.
-- **Edit / delete**: tap a card on Inventory or Sold to fix any field, change its status, or delete it along with its photo. Changing the status moves the card between Inventory and Sold. A traded card's status is locked to Traded (delete the trade to put it back in stock), and cards in a trade have buttons to view it.
-- **Expenses**: photograph a receipt and the `read-receipt` function fills in vendor, date, time, amount, tax, category, payment method and a summary for the notes. Check the fields and save; the receipt photo is stored with the expense. The list below shows each expense with its receipt thumbnail. Tap one to edit or delete it (deleting also removes the photo). A year filter (default: this year) shows the year's total and a total per category, and **Export expenses CSV** downloads that year.
-- **CSV export**: download the whole ledger, with the trade columns and profit in both views. **Export trades CSV** downloads every trade.
-- **Backup**: **Backup everything (zip)** on the Sold tab downloads `card-ledger-backup-YYYY-MM-DD.zip` with `cards.csv`, `trades.csv`, `expenses.csv`, and every photo in `slab-photos/` and `receipt-photos/`. Photos are named by date plus cert or vendor (e.g. `2026-01-01_PSA-10_Charizard_12345678.jpg`, `2026-03-15_Staples_45.10.jpg`), and each CSV has a `photo_file` column pointing to its photo. Any photo that can't be downloaded is listed in `missing-photos.txt`.
-- **Installable**: a web app manifest and icon, so you can add it to your home screen.
+  A balance check compares (values out + cash paid) with (values in + cash received). It warns when they differ but still lets you save. The trade is saved in one transaction by `record_trade`. The trade history opens each trade in full, and **Delete trade** undoes it in one transaction with `delete_trade`.
+- **Expenses**:
+  - **Add receipt** photographs a receipt, and `read-receipt` fills in vendor, date, time, amount, tax, category, payment method and notes. You can also add an expense without a photo.
+  - The year pills show the year's total and a total per category.
+  - Tap an expense to edit or delete it (deleting removes the photo too).
+  - **Export expenses CSV** downloads the selected year.
+- **⋯ menu**: Install app, Export cards CSV, Export trades CSV, **Backup everything (zip)**, Open classic app, Sign out.
+  - The backup is `card-ledger-backup-YYYY-MM-DD.zip`, with `cards.csv`, `trades.csv`, `expenses.csv`, and every photo in `slab-photos/` and `receipt-photos/`. Photos are named by date plus cert or vendor, and each CSV has a `photo_file` column. Photos that can't be downloaded are listed in `missing-photos.txt`.
+- **Install**: when Chrome offers to install the app (`beforeinstallprompt`), a one-time "Install the app" banner appears on Inventory. **Install app** is always in the ⋯ menu when the app isn't running installed: it opens Chrome's prompt if available, otherwise it explains how to install from Chrome's own menu.
+- **Back gesture**: every screen change is a browser history entry, so Android's back gesture steps back through screens (tabs, card detail, scan, price screens, edit), and it reopens the right card or trade. Chrome skips history entries a page adds without a recent tap, so entries are only added during a tap:
+  - The scan or receipt screen is added when you tap Take photo / Choose from photos, before the camera opens.
+  - The exit guard is added on your first tap.
+  - Anything finishing later (a photo read, a save) replaces entries instead of adding them.
+  - After a tap, the first back on Inventory shows "Swipe back again to exit", and a second back leaves. Backing out of a trade in progress asks first. If Android reloads the page while the camera is open, the app keeps its history.
 
 ### How trades are valued
 
@@ -38,11 +58,16 @@ The app is a single static page hosted on **GitHub Pages**. **Supabase** handles
 
 | File | Purpose |
 | --- | --- |
-| `index.html` | The whole app: markup, styles and JavaScript (uses `@supabase/supabase-js` v2 from jsDelivr, and loads JSZip 3.10.1 from cdnjs only when you make a backup) |
-| `manifest.json` | Web app manifest for installing to the home screen |
-| `icon.svg` | App icon |
+| `index.html` | The app's markup and styles (Space Grotesk and Inter from Google Fonts) |
+| `app.js` | The app's JavaScript (uses `@supabase/supabase-js` v2 from jsDelivr, and loads JSZip 3.10.1 from cdnjs only when you make a backup). `index.html` loads it as `app.js?v=…`; bump that version when `app.js` changes so phones fetch the new file. |
+| `manifest.json` | Web app manifest: "Card Ledger", start URL and scope at the site root. It has no `id`, like the original app's manifest, so the installed app keeps the same identity (`/card-ledger/`) and updates in place. |
+| `sw.js` | Minimal service worker, registered at the root scope. Chrome needs one before it offers to install. It caches nothing, only handles this site's page loads, and never touches Supabase or edge function calls. Bump `VERSION` when the app changes. |
+| `icon.svg`, `icon-192.png`, `icon-512.png` | App icons |
+| `classic/` | The previous version of the app, unchanged, as a fallback |
+| `beta/index.html` | Redirects old beta links and home-screen icons to the main app, and removes the old beta service worker |
 | `supabase/record_trade.sql` | The `record_trade` database function that saves a trade in one transaction |
 | `supabase/delete_trade.sql` | The `delete_trade` database function that undoes a trade in one transaction |
+| `supabase/functions/psa-cert/index.ts` | The `psa-cert` edge function that verifies PSA certs |
 
 The app has no build step and no dependencies to install.
 
@@ -58,20 +83,24 @@ The app signs in with email and password (`signInWithPassword`). It has no sign-
 | --- | --- | --- |
 | `id` | uuid | primary key, default `gen_random_uuid()` |
 | `user_id` | uuid | default `auth.uid()`, references `auth.users` |
-| `created_at` | timestamptz | default `now()`; the list is sorted by this column, newest first |
+| `created_at` | timestamptz | default `now()` |
 | `cert` | text | required |
 | `grader` | text | e.g. PSA, BGS, CGC |
 | `grade` | text | |
-| `name` | text | card name |
+| `name` | text | card name (your own copy; never PSA's data) |
 | `set_name` | text | set / year |
 | `cost` | numeric | price paid |
 | `buy_fees` | numeric | default `0` |
 | `bought_on` | date | |
-| `status` | text | `inventory` (default) or `sold` |
+| `bought_from` | text | eBay, Card show, Local shop, Other |
+| `status` | text | `inventory` (default), `sold` or `traded` |
 | `sold_for` | numeric | |
 | `sell_fees` | numeric | default `0` |
 | `sold_on` | date | |
+| `sold_platform` | text | eBay, Card show, Local, Other |
 | `photo` | text | storage path in the `slabs` bucket |
+| `acquired_via`, `acquired_trade_id`, `disposed_trade_id`, `trade_value_in`, `trade_value_out`, `fmv_basis`, `trade_gain` | | trade fields (see below) |
+| `psa_data` | jsonb | PSA verification result (see PSA rules below) |
 
 Turn on **Row Level Security** and add policies so that each user can only select, insert, update and delete rows where `user_id = auth.uid()`.
 
@@ -127,9 +156,20 @@ Called the same way (`supabase.functions.invoke('read-receipt', { body: { image 
 
 The app converts other date and time formats (such as `03/15/2026` or `2:05 PM`) to ISO, strips `$` from amounts, and maps the category to the closest one in the list, falling back to Other.
 
+### Edge function: `psa-cert` (PSA verification)
+
+`supabase/functions/psa-cert/index.ts` looks up a cert with PSA's public API (`GET https://api.psacard.com/publicapi/cert/GetByCertNumber/{cert}`) using the `PSA_API_TOKEN` secret. It returns only `verified`, `cert`, `name`, `year`, `set` and `grade`, never the full PSA response.
+
+PSA data rules (PSA API licence):
+- Only `verified`, `verified_at`, `name`, `year`, `set`, `grade` and `cert` are stored, only in `cards.psa_data`.
+- Each cert is looked up at most once: the app reuses `psa_data` already stored on any card with that cert, and results from earlier scans in the same session.
+- The card's own columns (name, set, grade) keep the photo reading or your edits. The app shows PSA's verified details when present, so clearing `psa_data` removes every trace of PSA data in one step.
+- `psa_data` is never included in CSV exports or the Backup zip.
+- If PSA can't be reached, the scan falls back to the photo reading and nothing is stored.
+
 ### Connecting the app
 
-Near the top of the script in `index.html`, set `SUPABASE_URL` and `SUPABASE_KEY` to your project's URL and publishable (anon) key, from **Project Settings → API**. The publishable key is meant to be public. Row Level Security and the storage policies are what keep each user's data private.
+Near the top of `app.js`, set `SUPABASE_URL` and `SUPABASE_KEY` to your project's URL and publishable (anon) key, from **Project Settings → API**. (`classic/index.html` has its own copy of these.) The publishable key is meant to be public. Row Level Security and the storage policies are what keep each user's data private.
 
 ## Hosting (GitHub Pages)
 
@@ -140,33 +180,3 @@ To run it locally, serve the folder with any static server, for example:
 ```bash
 python3 -m http.server 8000
 ```
-
-## Beta app (`/beta/`)
-
-A redesigned version of the app lives in `beta/` (`index.html`, `app.js`, its own `manifest.json` named "Card Ledger Beta" and `icon.svg`), so it can be installed on Android separately from the classic app. It uses the same Supabase project, tables, login, buckets and functions. The classic app at the root is unchanged.
-
-- Dark collector design with a bottom tab bar: Inventory, Sold, a gold **Scan** button, Expenses and Trades.
-- **Scan** reads a slab with `read-slab`, then shows the card with links to the grader's cert page, Card Ladder (searched by cert), ALT and eBay sold listings.
-- **Value links** (Scanned and Card detail screens). The exact text each link searches for is shown under the buttons.
-  - **Card Ladder:** copies the cert ("Cert copied, paste in Card Ladder") and opens the installed Android app (`intent://…package=com.ladderstudios.cardladder`), falling back to cardladder.com. On other devices it opens Card Ladder's cert search page.
-  - **ALT:** for PSA and BGS slabs, copies the cert, since ALT's search accepts PSA/BGS cert numbers but has no search link. For other graders, copies the detailed search text. Either way it then opens ALT.
-  - **eBay:** sold listings in Collectible Card Games individual cards (category 183454). The search is built from name, card number, set, year, variant, language and the grade in quotes (e.g. `"PSA 10"`), using PSA's verified details when present, with `-lot -proxy -custom -reprint`. It adds eBay's Graded, Professional Grader (PSA, BGS) and Grade filters, plus Language for non-English cards. From there: **Add to inventory** (price paid, fees, date, "Bought from") or **Sell** (sold for, fees, date, "Sold on", live profit preview).
-- Card detail, edit and delete, Sold with My view / Tax view, Expenses, Trades (new, view, delete), CSV exports and Backup all work as in the classic app.
-- New columns used: `cards.bought_from`, `cards.sold_platform`, `cards.psa_data`.
-- **Install**: when Chrome offers to install the app (`beforeinstallprompt`), a one-time "Install the app" banner appears on Inventory. **Install app** is always in the ⋯ menu when the app isn't running installed: it opens Chrome's prompt if available, otherwise it explains how to install from Chrome's own menu. `beta/sw.js` is a minimal service worker Chrome needs before it offers to install; it caches nothing. `icon-192.png` and `icon-512.png` are the install icons.
-- **Back gesture**: every screen change is a browser history entry, so Android's back gesture steps back through screens (tabs, card detail, scan, price screens, edit), and it reopens the right card or trade. Chrome skips history entries a page adds without a recent tap, so entries are only added during a tap:
-  - The scan or receipt screen is added when you tap Take photo / Choose from photos, before the camera opens.
-  - The exit guard is added on your first tap.
-  - Anything finishing later (a photo read, a save) replaces entries instead of adding them.
-  - After a tap, the first back on Inventory shows "Swipe back again to exit", and a second back leaves. Backing out of a trade in progress asks first. If Android reloads the page while the camera is open, the app keeps its history.
-
-### PSA verification (`psa-cert` edge function)
-
-`supabase/functions/psa-cert/index.ts` looks up a cert with PSA's public API (`GET https://api.psacard.com/publicapi/cert/GetByCertNumber/{cert}`) using the `PSA_API_TOKEN` secret. It returns only `verified`, `cert`, `name`, `year`, `set` and `grade`, never the full PSA response.
-
-PSA data rules (PSA API licence):
-- Only `verified`, `verified_at`, `name`, `year`, `set`, `grade` and `cert` are stored, only in `cards.psa_data`.
-- Each cert is looked up at most once: the app reuses `psa_data` already stored on any card with that cert, and results from earlier scans in the same session.
-- The card's own columns (name, set, grade) keep the photo reading or your edits. The beta shows PSA's verified details when present, so clearing `psa_data` removes every trace of PSA data in one step.
-- `psa_data` is never included in CSV exports or the Backup zip.
-- If PSA can't be reached, the scan falls back to the photo reading and nothing is stored.
