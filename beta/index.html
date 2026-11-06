@@ -128,6 +128,7 @@ nav .tbi{max-width:560px;margin:0 auto;display:flex;align-items:flex-end;padding
 <section class="view" data-view="inv">
  <div class="top"><h1>Inventory</h1><button class="ib" id="invSearchBtn" aria-label="Search"><i class="ic" data-i="search"></i></button><button class="ib" data-menu aria-label="More"><i class="ic" data-i="more"></i></button></div>
  <div class="panel" id="invSearch" hidden><div class="kv"><i class="ic mut" data-i="search"></i><input class="v" id="invQ" placeholder="Search name, set or cert" style="text-align:left" autocomplete="off"><button class="iconbtn" id="invQx" aria-label="Clear search"><i class="ic" data-i="close"></i></button></div></div>
+ <div class="panel" id="installBanner" hidden><div class="kv"><i class="ic gold" data-i="download"></i><span class="v" style="text-align:left;color:var(--fg)">Install the app</span><button class="pill sm on" id="installGo">Install</button><button class="iconbtn" id="installX" aria-label="Not now"><i class="ic" data-i="close"></i></button></div></div>
  <div class="tiles"><div class="tile"><small>In stock</small><b id="invCount">0</b></div><div class="tile"><small>Stock value</small><b id="invValue" class="gold">$0</b></div></div>
  <div class="pills" id="invFilters"><button class="pill on" data-f="all">All</button><button class="pill" data-f="PSA">PSA</button><button class="pill" data-f="CGC">CGC</button><button class="pill" data-f="BGS">BGS</button></div>
  <div class="grid" id="invGrid"></div>
