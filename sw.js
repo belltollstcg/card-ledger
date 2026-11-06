@@ -4,7 +4,7 @@
 // a fallback), and every other request (Supabase, edge functions, photos, scripts, fonts)
 // is not touched at all, so it can never serve stale data.
 // Bump VERSION whenever the app changes so phones pick up the new worker straight away.
-const VERSION = '2026-11-06.1';
+const VERSION = '2026-11-06.3';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil((async () => {
