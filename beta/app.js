@@ -41,10 +41,37 @@ const fillIcons=root=>root.querySelectorAll('i.ic[data-i]').forEach(e=>{if(!e.fi
 fillIcons(document);
 
 // ---------- navigation ----------
-const TABS=['inv','sold','exp','trades'];let cur='inv',stack=[];
-function show(v,{push=true}={}){if(push&&v!==cur)stack.push(cur);$$('.view').forEach(s=>s.hidden=s.dataset.view!==v);cur=v;
-  const tab=TABS.includes(v);$('#tabbar').hidden=!tab;if(tab){stack=[];$$('#tabbar [data-tab]').forEach(b=>b.classList.toggle('on',b.dataset.tab===v))}scrollTo(0,0)}
-function back(){let v=stack.pop();while(v&&(v==='loading'))v=stack.pop();show(v||'inv',{push:false})}
+// Every screen change is a browser history entry, so Android's back gesture (and the in-app back buttons, which
+// call history.back()) step through screens instead of closing the app. History looks like:
+//   [0] exit guard (root)  [1] Inventory  [2..] screens opened since
+// Backing into [0] from Inventory shows "Swipe back again to exit"; a second back within 2 seconds leaves.
+const TABS=['inv','sold','exp','trades'];let cur='inv',idx=1,pendingHome=null,exitWarnAt=0;
+function render(v){$$('.view').forEach(s=>s.hidden=s.dataset.view!==v);cur=v;const tab=TABS.includes(v);$('#tabbar').hidden=!tab;
+  if(tab)$$('#tabbar [data-tab]').forEach(b=>b.classList.toggle('on',b.dataset.tab===v));scrollTo(0,0)}
+// data: what to reopen if the user comes back to this entry (a card or trade id)
+function show(v,{push=true,data=null,replace=false}={}){
+  if(push&&v!==cur){if(cur==='loading'||replace)history.replaceState({v,idx,data},'');// a loading screen is replaced, not kept
+    else{idx++;history.pushState({v,idx,data},'')}}
+  else if(v===cur)history.replaceState({v,idx,data},'');
+  render(v)}
+const back=()=>history.back();
+// Finish a flow: go back to entry [1] (dropping the finished screens), then open the tab.
+function home(tab){return new Promise(res=>{if(idx<=1){show(tab);res();return}pendingHome={tab,res};history.go(-(idx-1))})}
+function initHistory(){idx=1;history.replaceState({v:'inv',idx:0,root:true},'');history.pushState({v:'inv',idx:1},'');render('inv')}
+addEventListener('popstate',e=>{const s=e.state;if(!s||typeof s.idx!=='number')return;closeSheet();
+  if(s.root){// back pressed on Inventory
+    if(Date.now()-exitWarnAt<2000){idx=0;history.back();return}
+    exitWarnAt=Date.now();toast('Swipe back again to exit',2000);idx=1;history.pushState({v:'inv',idx:1},'');render('inv');return}
+  if(pendingHome){if(s.idx!==1)return;const p=pendingHome;pendingHome=null;idx=1;render('inv');if(p.tab!=='inv')show(p.tab);p.res();return}
+  // leaving a trade in progress by gesture: ask first, and stay if they say no
+  if(cur==='trade'&&s.idx<idx&&T&&(T.out.length||T.in.length)){
+    if(!confirm('Discard this trade?')){idx=s.idx+1;history.pushState({v:'trade',idx},'');return}
+    T.in.forEach(c=>c.url&&URL.revokeObjectURL(c.url));T=null}
+  idx=s.idx;
+  if(s.v==='card'&&s.data)return openCard(s.data,{push:false});
+  if(s.v==='tview'&&s.data)return openTrade(s.data,{push:false});
+  if(s.v==='edit'&&s.data)return openEdit(s.data,{push:false});
+  render(s.v)});
 document.addEventListener('click',e=>{if(e.target.closest('[data-back]'))back()});
 $$('#tabbar [data-tab]').forEach(b=>b.onclick=()=>show(b.dataset.tab));
 
@@ -99,11 +126,25 @@ function renderAll(){renderInv();renderSold();renderTrades();if(cur==='card'&&cd
 // ---------- auth ----------
 $('#go').onclick=async()=>{$('#lmsg').textContent='Signing in…';const{error}=await sb.auth.signInWithPassword({email:$('#em').value.trim(),password:$('#pw').value});$('#lmsg').textContent=error?error.message:''};
 let booted=false;
-function setSession(s){$('#login').hidden=!!s;$('#app').hidden=!s;$('#tabbar').hidden=!s||!TABS.includes(cur);if(s&&!booted){booted=true;show('inv');load()}if(!s)booted=false}
+function setSession(s){$('#login').hidden=!!s;$('#app').hidden=!s;$('#tabbar').hidden=!s||!TABS.includes(cur);if(s&&!booted){booted=true;initHistory();load()}if(!s)booted=false}
 sb.auth.onAuthStateChange((_e,s)=>setSession(s));sb.auth.getSession().then(({data})=>setSession(data.session));
+
+// ---------- install ----------
+// Chrome fires beforeinstallprompt when the app can be installed; keep it and offer our own button.
+let installEvt=null;const isStandalone=()=>matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+const bannerOff=()=>{try{return localStorage.getItem('installBannerDismissed')==='1'}catch{return false}};
+function updInstall(){$('#installBanner').hidden=!(installEvt&&!isStandalone()&&!bannerOff())}
+addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEvt=e;updInstall()});
+addEventListener('appinstalled',()=>{installEvt=null;updInstall();toast('Card Ledger Beta installed')});
+matchMedia('(display-mode: standalone)').addEventListener?.('change',updInstall);
+async function installApp(){if(!installEvt)return;const e=installEvt;installEvt=null;updInstall();try{await e.prompt();await e.userChoice}catch{}}
+$('#installGo').onclick=installApp;
+$('#installX').onclick=()=>{try{localStorage.setItem('installBannerDismissed','1')}catch{}updInstall()};
+if('serviceWorker' in navigator&&location.protocol!=='file:')navigator.serviceWorker.register('sw.js').catch(()=>{});
 
 // ---------- menu ----------
 $$('[data-menu]').forEach(b=>b.onclick=()=>sheet('Card Ledger',[
+  ...(installEvt&&!isStandalone()?[{label:'Install app',icon:'download',fn:installApp}]:[]),
   {label:'Export cards CSV',icon:'download',fn:()=>dl(new Blob([cardsCsv(cards,null,trades)],{type:'text/csv'}),'card-ledger.csv')},
   {label:'Export trades CSV',icon:'download',fn:()=>dl(new Blob([tradesCsv([...trades].reverse(),cards)],{type:'text/csv'}),'card-ledger-trades.csv')},
   {label:'Backup everything (zip)',icon:'archive',fn:backup},
@@ -212,7 +253,7 @@ function withPsa(d,p){if(!p||!p.verified)return d;return{...d,grader:'PSA',cert:
 const joinSet=(year,set)=>year&&!String(set).includes(year)?`${year} ${set}`.trim():String(set||'').trim();
 $('#scanBtn').onclick=()=>pickPhoto('Scan a slab',scanFile);
 $('#scRescan').onclick=()=>pickPhoto('Scan a slab',scanFile);
-async function scanFile(file){if(S?.url)URL.revokeObjectURL(S.url);S=null;$('#loadTxt').textContent='Reading slab…';$('#loadSub').textContent='';show('loading');
+async function scanFile(file){if(S?.url)URL.revokeObjectURL(S.url);S=null;$('#loadTxt').textContent='Reading slab…';$('#loadSub').textContent='';show('loading',{replace:cur==='scanned'});// a rescan replaces the old result
   let blob,d={grader:'',grade:'',cert:'',name:'',year:'',set:''},msg='';
   try{blob=await shrink(file)}catch{toast('Could not open that photo');back();return}
   try{d=fromRead(await readSlab(blob))}catch{msg='Could not read the slab. Fill in the details by hand.'}
@@ -220,7 +261,6 @@ async function scanFile(file){if(S?.url)URL.revokeObjectURL(S.url);S=null;$('#lo
   if(gnorm(d.grader)==='PSA'&&d.cert){$('#loadTxt').textContent='Checking PSA…';psa=await psaLookup(d.cert);
     if(psa&&!psa.verified)msg='PSA has no record of this cert. Check the cert number.';else if(!psa)msg='Couldn’t reach PSA, so these details are from the photo.'}
   S={blob,url:URL.createObjectURL(blob),psa,read:d,shown:withPsa(d,psa)};
-  if(cur==='loading')cur=stack.pop()||'inv';// replace the loading screen so Back skips it
   fillScanned(msg);show('scanned');fitName()}
 function scanVals(){return{grader:$('#scGrader').value.trim(),grade:$('#scGrade').value.trim(),cert:$('#scCert').value.replace(/\s/g,''),name:$('#scName').value.trim(),year:$('#scYear').value.trim(),set:$('#scSet').value.trim()}}
 function fillScanned(msg){const d=S.shown;$('#scImg').src=S.url;$('#scName').value=d.name;$('#scYear').value=d.year;$('#scSet').value=d.set;
@@ -261,7 +301,7 @@ async function saveNew(){if(!S)return;const v=scanVals(),btn=$('#addSave');btn.d
     const{error}=await sb.from('cards').insert({cert:v.cert,grader:v.grader,grade:o.grade,name:o.name,set_name:joinSet(o.year,o.set),cost:N($('#addPrice').value),buy_fees:N($('#addFees').value),
       bought_on:$('#addDate').value||today(),photo,acquired_via:'purchase',bought_from:pget($('#addFrom')),...(p?{psa_data:p}:{})});
     if(error){if(photo)sb.storage.from('slabs').remove([photo]);$('#addMsg').textContent='Save failed: '+error.message;return}
-    toast('Saved to inventory');S=null;show('inv');load()}
+    toast('Saved to inventory');S=null;await home('inv');load()}
   finally{btn.disabled=false}}
 
 // ---------- sell ----------
@@ -288,12 +328,12 @@ $('#sellSave').onclick=async()=>{const c=sellCard;if($('#sellPrice').value==='')
   try{const p=!c.psa_data&&psaFor(sellPsa,c.cert);
     const{error}=await sb.from('cards').update({status:'sold',sold_for:N($('#sellPrice').value),sell_fees:N($('#sellFees').value),sold_on:$('#sellDate').value||today(),sold_platform:pget($('#sellOn')),...(p?{psa_data:p}:{})}).eq('id',c.id);
     if(error){$('#sellMsg').textContent='Save failed: '+error.message;return}
-    toast(`Sold · profit ${money(N($('#sellPrice').value)-N($('#sellFees').value)-myBasis(c))}`);sellCard=sellPsa=null;S=null;show('sold');load()}
+    toast(`Sold · profit ${money(N($('#sellPrice').value)-N($('#sellFees').value)-myBasis(c))}`);sellCard=sellPsa=null;S=null;await home('sold');load()}
   finally{btn.disabled=false}};
 
 // ---------- card detail ----------
 let cdId=null;
-function openCard(id,{push=true}={}){const c=cardById(id);if(!c){if(cur==='card')back();return}cdId=c.id;
+function openCard(id,{push=true}={}){const c=cardById(id);if(!c){if(cur==='card')back();else if(!push)render('inv');return}cdId=c.id;
   const u=urls[c.photo];$('#cdImg').hidden=!u;$('#cdPh').hidden=!!u;if(u)$('#cdImg').src=u;
   const dc=dv(c);$('#cdName').textContent=dc.name||'Untitled card';$('#cdSub').textContent=[dc.set_name,[dc.grader,dc.grade].filter(Boolean).join(' '),c.cert?'#'+c.cert:''].filter(Boolean).join(' · ');
   $('#cdBadge').hidden=!(c.psa_data&&c.psa_data.verified);
@@ -313,20 +353,20 @@ function openCard(id,{push=true}={}){const c=cardById(id);if(!c){if(cur==='card'
   if(c.disposed_trade_id&&tradeOf(c.disposed_trade_id))act.push(`<button class="link" data-trade="${esc(c.disposed_trade_id)}">View the trade it went out in</button>`);
   $('#cdActions').innerHTML=act.join('');
   if(c.status==='inventory'){$('#cdSell').onclick=()=>{sellPsa=null;openSell(c.id)};$('#cdTrade').onclick=()=>startTrade([c.id])}
-  if(push||cur!=='card')show('card',{push})}
+  if(push||cur!=='card')show('card',{push,data:c.id})}
 $('#cdActions').addEventListener('click',e=>{const b=e.target.closest('[data-trade]');if(b)openTrade(b.dataset.trade)});
 $('#cdEdit').onclick=()=>openEdit(cdId);
 
 // ---------- edit card ----------
 let editing=null;
-function openEdit(id){const c=cardById(id);if(!c)return;editing=c;
+function openEdit(id,{push=true}={}){const c=cardById(id);if(!c){if(!push)render('inv');return}editing=c;
   const v={eName:c.name,eSet:c.set_name,eGrader:c.grader,eGrade:c.grade,eCert:c.cert,eCost:c.cost,eFees:c.buy_fees,eBought:c.bought_on,eSoldFor:c.sold_for,eSellFees:c.sell_fees,eSoldOn:c.sold_on||today()};
   Object.entries(v).forEach(([k,x])=>$('#'+k).value=x??'');pset($('#eFrom'),c.bought_from||null);pset($('#ePlat'),c.sold_platform||null);
   const traded=c.status==='traded';pset($('#eStatus'),traded?null:c.status);$$('#eStatus .pill').forEach(b=>b.disabled=traded);
   $('#eTradedNote').hidden=!traded;$('#eTradedNote').textContent=traded?`Traded away on ${fmtDate(tradeDate(c.disposed_trade_id))}. To put it back in stock, delete that trade.`:'';
   const pv=c.psa_data&&c.psa_data.verified,d=dv(c);$('#ePsaNote').hidden=!pv;
   if(pv)$('#ePsaNote').textContent=`Shown with PSA’s verified details: ${d.name} · ${d.set_name} · ${d.grade}. The fields below are your own copy; exports use these.`;
-  $('#eSoldRows').hidden=c.status!=='sold';$('#eDel').hidden=traded;$('#eMsg').textContent='';show('edit')}
+  $('#eSoldRows').hidden=c.status!=='sold';$('#eDel').hidden=traded;$('#eMsg').textContent='';show('edit',{push,data:c.id})}
 $('#eStatus').addEventListener('change',()=>{$('#eSoldRows').hidden=pget($('#eStatus'))!=='sold'});
 $('#eSave').onclick=async()=>{const c=editing,cert=$('#eCert').value.trim(),status=c.status==='traded'?'traded':pget($('#eStatus')),sold=status==='sold';
   if(!cert){$('#eMsg').textContent='Cert number is required.';return}if(sold&&$('#eSoldFor').value===''){$('#eMsg').textContent='Enter the sale price.';return}
@@ -338,7 +378,7 @@ $('#eSave').onclick=async()=>{const c=editing,cert=$('#eCert').value.trim(),stat
 $('#eDel').onclick=async()=>{if(!confirm('Delete this card permanently?'))return;const c=editing;
   if(c.photo)await sb.storage.from('slabs').remove([c.photo]);const{error}=await sb.from('cards').delete().eq('id',c.id);
   if(error){$('#eMsg').textContent='Delete failed: '+error.message;return}
-  toast('Card deleted');show(c.status==='inventory'?'inv':'sold');load()};
+  toast('Card deleted');await home(c.status==='inventory'?'inv':'sold');load()};
 
 // ---------- trades list + detail ----------
 function renderTrades(){$('#tList').innerHTML=trades.map(t=>{const o=cards.filter(c=>String(c.disposed_trade_id)===String(t.id)),i=cards.filter(c=>String(c.acquired_trade_id)===String(t.id));
@@ -347,7 +387,7 @@ function renderTrades(){$('#tList').innerHTML=trades.map(t=>{const o=cards.filte
   fillIcons($('#tList'))}
 $('#tList').onclick=e=>{const b=e.target.closest('[data-trade]');if(b)openTrade(b.dataset.trade)};
 let tvId=null;
-function openTrade(id){const t=tradeOf(id);if(!t)return;tvId=String(t.id);
+function openTrade(id,{push=true}={}){const t=tradeOf(id);if(!t){if(!push)render('trades');return}tvId=String(t.id);
   const o=cards.filter(c=>String(c.disposed_trade_id)===tvId),i=cards.filter(c=>String(c.acquired_trade_id)===tvId),s=(l,f)=>l.reduce((a,c)=>a+N(f(c)),0);
   const row=(c,a,b)=>`<button class="li" data-card="${esc(c.id)}">${thumb(c)}<div class="in"><b>${esc(dv(c).name||'Untitled card')}</b><small>${esc([c.grader,c.grade].filter(Boolean).join(' '))} · #${esc(c.cert)}</small><small>${b}</small></div><div class="amt">${a}</div></button>`;
   $('#tvBody').innerHTML=`<div class="tiles"><div class="tile"><small>Date</small><b style="font-size:19px">${fmtDate(t.trade_date)}</b></div><div class="tile"><small>With</small><b style="font-size:19px">${esc(t.counterparty||'—')}</b></div></div>`+
@@ -359,14 +399,14 @@ function openTrade(id){const t=tradeOf(id);if(!t)return;tvId=String(t.id);
     `<div class="kv"><span>Carryover basis (my view)</span><span class="v gold">${money(s(i,myBasis))}</span></div><div class="kv"><span>Market-value basis (tax view)</span><span class="v gold">${money(s(i,taxBasis))}</span></div>`+
     (N(t.carryover_gain)?`<div class="kv"><span>Cash profit (my view)</span><span class="v">${pc(N(t.carryover_gain))}</span></div>`:'')+
     `<div class="kv"><span>Gain on cards out (tax view)</span><span class="v">${pc(s(o,tradeGainTax))}</span></div></div>`;
-  fillIcons($('#tvBody'));$('#tvMsg').textContent='';show('tview')}
+  fillIcons($('#tvBody'));$('#tvMsg').textContent='';show('tview',{push,data:t.id})}
 $('#tvBody').addEventListener('click',e=>{const b=e.target.closest('[data-card]');if(b)openCard(b.dataset.card)});
 $('#tvDel').onclick=async()=>{const id=tvId,o=cards.filter(c=>String(c.disposed_trade_id)===id),i=cards.filter(c=>String(c.acquired_trade_id)===id);
   if(!confirm(`Delete this trade?\n\n${pl(o.length,'card')} you traded away will go back to in stock.\n${pl(i.length,'card')} you got in the trade will be deleted, with ${i.length===1?'its photo':'their photos'}.\n\nThis can't be undone.`))return;
   const btn=$('#tvDel');btn.disabled=true;$('#tvMsg').textContent='Deleting trade…';
   try{const{data,error}=await sb.rpc('delete_trade',{p_trade_id:id});
     if(error){$('#tvMsg').textContent=error.code==='PGRST202'?'The delete_trade function isn’t set up in Supabase yet.':error.message;return}
-    const ph=data?.photos||[];if(ph.length)await sb.storage.from('slabs').remove(ph);toast('Trade deleted');show('trades');await load()}
+    const ph=data?.photos||[];if(ph.length)await sb.storage.from('slabs').remove(ph);toast('Trade deleted');await home('trades');await load()}
   finally{btn.disabled=false}};
 
 // ---------- trade flow ----------
@@ -443,7 +483,7 @@ async function saveTrade(){const k=tradeCalc(),diff=r2(k.vo+k.paid-k.vi-k.recv);
     // record_trade() doesn't know about psa_data; attach verified PSA results to the new cards afterwards
     const tid=data?.trade_id;
     if(tid)for(const c of T.in){const p=psaFor(c.psa,c.cert.trim());if(p)await sb.from('cards').update({psa_data:p}).eq('acquired_trade_id',tid).eq('cert',c.cert.trim())}
-    T.in.forEach(c=>c.url&&URL.revokeObjectURL(c.url));T=null;toast('Trade saved');show('trades');await load();if(tid)openTrade(tid)}
+    T.in.forEach(c=>c.url&&URL.revokeObjectURL(c.url));T=null;toast('Trade saved');await home('trades');await load();if(tid)openTrade(tid)}
   catch(e){if(uploaded.length)sb.storage.from('slabs').remove(uploaded);$('#trMsg').textContent='Trade not saved: '+(e.message||e)}
   finally{btn.disabled=false}}
 
@@ -482,7 +522,7 @@ $('#xAdd').onclick=()=>pickPhoto('Add a receipt',async f=>{if(xUrl)URL.revokeObj
   let pre={msg:''};try{xBlob=await shrink(f);xUrl=URL.createObjectURL(xBlob);const{data,error}=await sb.functions.invoke('read-receipt',{body:{image:await b64(xBlob)}});if(error)throw error;const d=data||{};xRaw=d;
     pre={vendor:d.vendor||'',expense_date:isoDate(d.date)||today(),expense_time:hhmm(d.time),amount:num(d.total),tax:num(d.tax),category:matchCat(d.category),payment_method:d.payment_method||'',notes:d.summary||'',msg:'Check the details, then save.'}}
   catch{pre={msg:'Could not read the receipt. Enter the details by hand.'}}
-  if(cur==='loading')cur=stack.pop()||'exp';openXForm(null,pre)});
+  openXForm(null,pre)});
 $('#xfSave').onclick=async()=>{if($('#xfAmt').value===''){$('#xfMsg').textContent='Enter the amount.';return}if(!$('#xfDate').value){$('#xfMsg').textContent='Enter the date.';return}
   const row={vendor:$('#xfVendor').value.trim(),expense_date:$('#xfDate').value,expense_time:$('#xfTime').value||null,amount:N($('#xfAmt').value),tax:N($('#xfTax').value),
     category:pget($('#xfCat'))||'Other',payment_method:$('#xfPay').value.trim(),notes:$('#xfNotes').value.trim()};
@@ -492,11 +532,11 @@ $('#xfSave').onclick=async()=>{if($('#xfAmt').value===''){$('#xfMsg').textConten
         if(up.error){$('#xfMsg').textContent='Photo upload failed: '+up.error.message;return}photo=path}
       const{error}=await sb.from('expenses').insert({...row,photo,raw:xRaw});if(error){if(photo)sb.storage.from('receipts').remove([photo]);$('#xfMsg').textContent='Save failed: '+error.message;return}
       xBlob=xRaw=null;if(xUrl)URL.revokeObjectURL(xUrl);xUrl=null}
-    xYear=row.expense_date.slice(0,4);toast('Expense saved');show('exp');loadExpenses()}
+    xYear=row.expense_date.slice(0,4);toast('Expense saved');await home('exp');loadExpenses()}
   finally{btn.disabled=false}};
 $('#xfDel').onclick=async()=>{if(!confirm('Delete this expense and its receipt photo permanently?'))return;const e=xEditing;
   if(e.photo){const{error}=await sb.storage.from('receipts').remove([e.photo]);if(error){$('#xfMsg').textContent='Could not delete photo: '+error.message;return}}
-  const{error}=await sb.from('expenses').delete().eq('id',e.id);if(error){$('#xfMsg').textContent='Delete failed: '+error.message;return}toast('Expense deleted');show('exp');loadExpenses()};
+  const{error}=await sb.from('expenses').delete().eq('id',e.id);if(error){$('#xfMsg').textContent='Delete failed: '+error.message;return}toast('Expense deleted');await home('exp');loadExpenses()};
 
 // ---------- CSV + backup (psa_data is never included) ----------
 const CARD_COLS=['cert','grader','grade','name','set_name','bought_on','cost','buy_fees','bought_from','status','sold_on','sold_for','sell_fees','sold_platform',
