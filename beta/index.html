@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111318"><link rel="manifest" href="manifest.json"><link rel="icon" href="icon.svg">
+<title>Card Ledger Beta</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#111318;--panel:#181B21;--tile:#1C1F26;--line:#23262E;--fg:#F4F2EC;--mut:#A3A6AE;--gold:#F2C14E;--label:#ECE8DD;--ok:#5CCB8F;--bad:#FF7A6E;color-scheme:dark}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{background:var(--bg)}
+body{margin:0 auto;max-width:560px;background:var(--bg);color:var(--fg);font:16px/1.4 Inter,system-ui,sans-serif;padding:0 16px calc(120px + env(safe-area-inset-bottom))}
+h1,h2,h3,.num{font-family:'Space Grotesk',Inter,sans-serif;letter-spacing:-.01em}
+h1{font-size:30px;font-weight:700;margin:0}h2{font-size:22px;font-weight:600;margin:0}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}[hidden]{display:none!important}
+a{color:inherit}
+.ic{display:inline-grid;place-items:center;flex:none}.ic svg{width:22px;height:22px}
+.top{display:flex;align-items:center;gap:8px;min-height:76px;padding-top:env(safe-area-inset-top)}
+.top h1,.top h2{flex:1;min-width:0}
+.ib{width:44px;height:44px;border-radius:50%;border:0;background:var(--tile);color:var(--fg);display:grid;place-items:center;flex:none}
+.mut{color:var(--mut)}.gold{color:var(--gold)}.pos{color:var(--ok)}.neg{color:var(--bad)}
+.sub{color:var(--mut);font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin:22px 4px 8px}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}.tiles.three{grid-template-columns:1fr 1fr 1fr}
+.tile{background:var(--tile);border-radius:18px;padding:14px 16px;min-width:0}
+.tile small{color:var(--mut);font-size:13px;display:block}
+.tile b{font:700 24px 'Space Grotesk',sans-serif;display:block;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tiles.three .tile b{font-size:19px}
+.pills{display:flex;gap:8px;overflow-x:auto;padding:14px 0 6px;scrollbar-width:none}.pills::-webkit-scrollbar{display:none}
+.pills.wrap{flex-wrap:wrap;overflow:visible;padding:4px 0 12px}
+.pill{flex:none;min-height:44px;padding:0 18px;border-radius:999px;border:0;background:var(--tile);color:var(--fg);font-weight:500;font-size:15px;display:inline-flex;align-items:center;gap:8px;text-decoration:none;white-space:nowrap}
+.pill.sm{padding:0 15px;font-size:14px}.pill .ic svg{width:16px;height:16px}
+.pill.on{background:var(--gold);color:#111318}
+.pill:disabled{opacity:.45}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px 12px;margin-top:10px}
+.gi{background:none;border:0;padding:0;text-align:left;color:var(--fg);min-width:0}
+.gi b{display:block;margin-top:8px;font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gi small{color:var(--mut);font-size:13px}
+.slab{aspect-ratio:3/5;width:100%;border-radius:14px;background:var(--tile);object-fit:cover;display:block}
+.ph{display:grid;place-items:center;color:#4a4e58}.ph .ic svg{width:34px;height:34px}
+.panel{background:var(--panel);border-radius:20px;padding:0 16px;margin:12px 0}
+.kv{display:flex;align-items:center;gap:12px;min-height:54px;border-bottom:1px solid var(--line);text-decoration:none}
+.kv:last-child{border-bottom:0}
+.kv>span:first-child{color:var(--mut);font-size:15px;flex:none}
+.kv>.v{flex:1;text-align:right;font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.kv.col{flex-direction:column;align-items:stretch;gap:0;padding-top:14px}
+.kv.lnk{color:var(--gold);font-weight:600;justify-content:space-between}
+input.v,select.v,textarea.v{background:transparent;border:0;color:var(--fg);font-weight:500;font-size:16px;text-align:right;width:100%;padding:15px 0;outline:none;min-height:54px}
+.kv textarea.v{text-align:left;resize:none;padding:4px 0 14px}
+input.v::placeholder,textarea.v::placeholder,.bignum input::placeholder{color:#5a5e68}
+input[type=date].v,input[type=time].v{text-align:right}
+input::-webkit-outer-spin-button,input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}input[type=number]{-moz-appearance:textfield}
+select.v{appearance:none;text-align-last:right}
+.big{text-align:center;padding:14px 0 4px}.big small{color:var(--mut);font-size:14px}
+.bignum{display:flex;justify-content:center;align-items:baseline;font:700 58px/1.1 'Space Grotesk',sans-serif;margin-top:4px}
+.bignum span{color:var(--mut);font-size:36px;margin-right:2px}
+.bignum input{width:4.6ch;background:transparent;border:0;color:var(--fg);font:inherit;outline:none;padding:0;text-align:left}
+.btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;height:60px;border-radius:30px;border:0;font-weight:600;font-size:17px;margin-top:12px;background:var(--gold);color:#111318;text-decoration:none}
+.btn.dark{background:var(--tile);color:var(--fg)}
+.btn.danger{background:transparent;color:var(--bad);box-shadow:inset 0 0 0 1.5px rgba(255,122,110,.6)}
+.btn:disabled{opacity:.5}
+.btns2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.btns2 .btn{margin-top:12px}
+.link{display:block;background:none;border:0;color:var(--mut);font-weight:500;font-size:15px;min-height:44px;width:100%;margin-top:4px;text-align:center}
+.badge{display:inline-flex;align-items:center;gap:6px;background:rgba(92,203,143,.14);color:var(--ok);border-radius:999px;padding:7px 12px 7px 9px;font-size:13px;font-weight:600;margin-top:12px}
+.badge .ic svg{width:17px;height:17px}
+.msg{color:var(--mut);font-size:14px;min-height:20px;margin:10px 4px 0}
+.warnp{box-shadow:inset 0 0 0 1.5px rgba(255,122,110,.55)}
+.li{display:flex;gap:12px;align-items:center;min-height:76px;padding:10px 0;border-bottom:1px solid var(--line);background:none;border-left:0;border-right:0;border-top:0;width:100%;text-align:left;color:var(--fg)}
+.li:last-child{border-bottom:0}
+.li .th{width:44px;height:72px;border-radius:8px;object-fit:cover;background:var(--tile);flex:none}
+.li .th.ph .ic svg{width:20px;height:20px}
+.li .in{flex:1;min-width:0}.li .in b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.li .in small{display:block;color:var(--mut);font-size:13px}
+.li .amt{font:600 17px 'Space Grotesk',sans-serif;text-align:right;flex:none}
+.li .amt small{display:block;font:500 12px Inter;color:var(--mut)}
+.hero{display:flex;gap:16px;align-items:flex-start;justify-content:center;margin-top:4px}
+.hero .slab{width:52%;max-width:240px;flex:none;box-shadow:0 18px 40px rgba(0,0,0,.45)}
+.hero .txt{flex:1;min-width:0}
+.tname{min-height:1.3em;background:transparent;border:0;color:var(--fg);font:600 22px/1.2 'Space Grotesk',sans-serif;width:100%;padding:0;outline:none;resize:none;overflow:hidden}
+.tsub{background:transparent;border:0;color:var(--mut);font-size:15px;width:100%;padding:6px 0 0;outline:none}
+.cdimg{width:62%;max-width:280px;margin:4px auto 0;box-shadow:0 18px 40px rgba(0,0,0,.45)}
+.center{text-align:center}
+.tl{position:relative;padding:4px 0}
+.tl .ev{display:flex;gap:14px;padding:12px 0;align-items:flex-start}
+.tl .dot{width:12px;height:12px;border-radius:50%;background:var(--gold);margin-top:5px;flex:none;box-shadow:0 0 0 4px rgba(242,193,78,.15)}
+.tl .dot.d2{background:var(--label);box-shadow:0 0 0 4px rgba(236,232,221,.12)}
+.tl .ev b{display:block;font-weight:600}.tl .ev small{color:var(--mut)}
+.sumrow{display:flex;gap:12px;align-items:center;background:var(--panel);border-radius:18px;padding:10px 14px}
+.sumrow img,.sumrow .ph{width:40px;height:64px;border-radius:7px;object-fit:cover;background:var(--tile);flex:none}
+.sumrow b{display:block;font-weight:600}.sumrow small{color:var(--mut);font-size:13px}
+.steps{display:flex;gap:6px;margin:0 0 6px}.steps i{flex:1;height:4px;border-radius:2px;background:var(--line)}.steps i.on{background:var(--gold)}
+.row2{display:flex;gap:8px;align-items:center}
+.load{min-height:70vh;display:grid;place-items:center;text-align:center}
+.spin{width:54px;height:54px;border-radius:50%;border:4px solid var(--line);border-top-color:var(--gold);animation:sp 1s linear infinite;margin:0 auto 18px}
+@keyframes sp{to{transform:rotate(360deg)}}
+nav#tabbar{position:fixed;left:0;right:0;bottom:0;background:rgba(24,27,33,.97);border-top:1px solid var(--line);z-index:10;padding-bottom:env(safe-area-inset-bottom);backdrop-filter:blur(8px)}
+nav .tbi{max-width:560px;margin:0 auto;display:flex;align-items:flex-end;padding:4px 6px 6px}
+.tb{flex:1;min-height:58px;background:none;border:0;color:var(--mut);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11px;font-weight:500}
+.tb.on{color:var(--gold)}
+.scanwrap{flex:1;display:flex;justify-content:center}
+.scanbtn{width:70px;height:70px;border-radius:50%;background:var(--gold);color:#111318;border:0;display:grid;place-items:center;margin-top:-30px;box-shadow:0 10px 26px rgba(242,193,78,.32),0 0 0 6px var(--bg)}
+.scanbtn .ic svg{width:30px;height:30px}
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:30}
+.sheet{position:fixed;left:0;right:0;bottom:0;max-width:560px;margin:0 auto;background:var(--panel);border-radius:24px 24px 0 0;padding:8px 16px calc(18px + env(safe-area-inset-bottom));z-index:31}
+.sheet .grab{width:40px;height:5px;border-radius:3px;background:var(--line);margin:4px auto 10px}
+.sheet h3{font-size:18px;margin:4px 4px 6px}
+.sheet .si{display:flex;align-items:center;gap:14px;width:100%;min-height:58px;background:none;border:0;border-bottom:1px solid var(--line);color:var(--fg);font-size:16px;font-weight:500;text-align:left;text-decoration:none;padding:0 4px}
+.sheet .si:last-of-type{border-bottom:0}.sheet .si .ic{color:var(--gold)}
+#toast{position:fixed;left:50%;bottom:calc(112px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--label);color:#111318;border-radius:999px;padding:12px 20px;font-weight:600;font-size:14px;z-index:40;box-shadow:0 10px 30px rgba(0,0,0,.4);max-width:calc(100% - 32px);text-align:center}
+.login{min-height:90vh;display:flex;flex-direction:column;justify-content:center}
+.login h1{font-size:34px}.login p{color:var(--mut);margin:6px 0 20px}
+.note{background:var(--tile);border-radius:14px;padding:12px 14px;color:var(--mut);font-size:14px;margin-top:10px}
+.iconbtn{background:none;border:0;color:var(--mut);width:44px;height:44px;display:grid;place-items:center;flex:none}
+.empty{color:var(--mut);text-align:center;padding:36px 10px}
+</style></head><body>
+
+<section id="login" class="login" hidden>
+ <h1>Card Ledger <span class="gold">Beta</span></h1><p>Sign in with your Card Ledger account.</p>
+ <div class="panel"><div class="kv"><span>Email</span><input class="v" id="em" type="email" autocomplete="username"></div>
+  <div class="kv"><span>Password</span><input class="v" id="pw" type="password" autocomplete="current-password"></div></div>
+ <button class="btn" id="go">Sign in</button><div class="msg" id="lmsg"></div>
+</section>
+
+<main id="app" hidden>
+
+<!-- ============ INVENTORY ============ -->
+<section class="view" data-view="inv">
+ <div class="top"><h1>Inventory</h1><button class="ib" id="invSearchBtn" aria-label="Search"><i class="ic" data-i="search"></i></button><button class="ib" data-menu aria-label="More"><i class="ic" data-i="more"></i></button></div>
+ <div class="panel" id="invSearch" hidden><div class="kv"><i class="ic mut" data-i="search"></i><input class="v" id="invQ" placeholder="Search name, set or cert" style="text-align:left" autocomplete="off"><button class="iconbtn" id="invQx" aria-label="Clear search"><i class="ic" data-i="close"></i></button></div></div>
+ <div class="tiles"><div class="tile"><small>In stock</small><b id="invCount">0</b></div><div class="tile"><small>Stock value</small><b id="invValue" class="gold">$0</b></div></div>
+ <div class="pills" id="invFilters"><button class="pill on" data-f="all">All</button><button class="pill" data-f="PSA">PSA</button><button class="pill" data-f="CGC">CGC</button><button class="pill" data-f="BGS">BGS</button></div>
+ <div class="grid" id="invGrid"></div>
+</section>
+
+<!-- ============ SOLD ============ -->
+<section class="view" data-view="sold" hidden>
+ <div class="top"><h1>Sold</h1><button class="ib" data-menu aria-label="More"><i class="ic" data-i="more"></i></button></div>
+ <div class="pills" id="pview" style="padding-top:0"><button class="pill on" data-v="my">My view</button><button class="pill" data-v="tax">Tax view</button></div>
+ <div class="tiles" style="margin-top:8px"><div class="tile"><small>Revenue</small><b id="soldRev">$0</b></div><div class="tile"><small>Net profit</small><b id="soldNet" class="gold">$0</b></div></div>
+ <div class="msg" id="soldNote"></div>
+ <div class="panel" id="soldList"></div>
+</section>
+
+<!-- ============ EXPENSES ============ -->
+<section class="view" data-view="exp" hidden>
+ <div class="top"><h1>Expenses</h1><button class="ib" data-menu aria-label="More"><i class="ic" data-i="more"></i></button></div>
+ <div class="pills" id="xYears" style="padding-top:0"></div>
+ <div class="tiles" style="margin-top:8px"><div class="tile"><small>Total</small><b id="xTotal" class="gold">$0</b></div><div class="tile"><small>Expenses</small><b id="xCount">0</b></div></div>
+ <div class="panel" id="xCats"></div>
+ <button class="btn" id="xAdd"><i class="ic" data-i="camera"></i>Add receipt</button>
+ <button class="link" id="xAddHand">Add without a photo</button>
+ <div class="sub">Expenses</div><div class="panel" id="xList"></div>
+ <button class="pill sm" id="xCsv"><i class="ic" data-i="download"></i>Export expenses CSV</button>
+</section>
+
+<!-- ============ TRADES ============ -->
+<section class="view" data-view="trades" hidden>
+ <div class="top"><h1>Trades</h1><button class="ib" data-menu aria-label="More"><i class="ic" data-i="more"></i></button></div>
+ <button class="btn" id="tNew"><i class="ic" data-i="swap"></i>New trade</button>
+ <div class="sub">History</div><div class="panel" id="tList"></div>
+ <button class="pill sm" id="tCsv"><i class="ic" data-i="download"></i>Export trades CSV</button>
+</section>
+
+<!-- ============ LOADING ============ -->
+<section class="view" data-view="loading" hidden><div class="load"><div><div class="spin"></div><h2 id="loadTxt">Reading slab…</h2><div class="msg" id="loadSub"></div></div></div></section>
+
+<!-- ============ SCANNED ============ -->
+<section class="view" data-view="scanned" hidden>
+ <div class="top"><button class="ib" data-back aria-label="Close"><i class="ic" data-i="close"></i></button><h2>Scanned</h2></div>
+ <div class="hero"><img id="scImg" class="slab" alt=""><div class="txt">
+  <textarea id="scName" class="tname" rows="2" placeholder="Card name"></textarea>
+  <input id="scYear" class="tsub" placeholder="Year" inputmode="numeric"><input id="scSet" class="tsub" placeholder="Set" style="padding-top:2px">
+  <div id="scBadge" class="badge" hidden><i class="ic" data-i="verified"></i>Verified with PSA</div>
+ </div></div>
+ <div class="panel" style="margin-top:20px">
+  <div class="kv"><span>Grader</span><input class="v" id="scGrader" placeholder="PSA, CGC, BGS"></div>
+  <div class="kv"><span>Grade</span><input class="v" id="scGrade" placeholder="10"></div>
+  <div class="kv"><span>Cert #</span><input class="v" id="scCert" inputmode="numeric" placeholder="Cert number"></div>
+  <a class="kv lnk" id="scCertLink" target="_blank" rel="noopener"><span class="gold" id="scCertLabel">View card on PSA</span><i class="ic" data-i="ext"></i></a>
+ </div>
+ <div class="sub">Check value</div><div class="pills" id="scValue" style="padding-top:0"></div>
+ <div class="msg" id="scMsg"></div>
+ <button class="btn" id="scAdd">Add to inventory</button>
+ <button class="btn dark" id="scSell">Sell</button>
+ <button class="link" id="scRescan">Rescan or choose from photos</button>
+</section>
+
+<!-- ============ ADD TO INVENTORY ============ -->
+<section class="view" data-view="add" hidden>
+ <div class="top"><button class="ib" data-back aria-label="Back"><i class="ic" data-i="back"></i></button><h2>Add to inventory</h2></div>
+ <div class="sumrow" id="addSum"></div>
+ <div class="big"><small>Price paid</small><div class="bignum"><span>$</span><input id="addPrice" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0"></div></div>
+ <div class="panel">
+  <div class="kv"><span>Fees / shipping</span><input class="v" id="addFees" type="number" step="0.01" min="0" inputmode="decimal" placeholder="$0.00"></div>
+  <div class="kv"><span>Date</span><input class="v" id="addDate" type="date"></div>
+  <div class="kv col"><span>Bought from</span><div class="pills wrap" id="addFrom"></div></div>
+ </div>
+ <div class="panel warnp" id="addDup" hidden><div style="padding:14px 0 4px"><b id="addDupMsg"></b></div><div id="addDupList"></div>
+  <div class="btns2" style="padding-bottom:14px"><button class="btn" id="addDupSave">Save anyway</button><button class="btn dark" id="addDupCancel">Cancel</button></div></div>
+ <div class="msg" id="addMsg"></div>
+ <button class="btn" id="addSave">Save to inventory</button>
+</section>
+
+<!-- ============ SELL ============ -->
+<section class="view" data-view="sell" hidden>
+ <div class="top"><button class="ib" data-back aria-label="Back"><i class="ic" data-i="back"></i></button><h2>Sell</h2></div>
+ <div class="sumrow" id="sellSum"></div>
+ <div class="big"><small>Sold for</small><div class="bignum"><span>$</span><input id="sellPrice" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0"></div></div>
+ <div class="panel">
+  <div class="kv"><span>Fees</span><input class="v" id="sellFees" type="number" step="0.01" min="0" inputmode="decimal" placeholder="$0.00"></div>
+  <div class="kv"><span>Date</span><input class="v" id="sellDate" type="date"></div>
+  <div class="kv col"><span>Sold on</span><div class="pills wrap" id="sellOn"></div></div>
+ </div>
+ <div class="panel">
+  <div class="kv"><span>Profit</span><b class="v num" id="sellProfit" style="font-size:24px">$0.00</b></div>
+  <div class="kv"><span>Paid</span><span class="v" id="sellPaid"></span></div>
+  <div class="kv"><span>Days held</span><span class="v" id="sellDays"></span></div>
+ </div>
+ <div class="msg" id="sellMsg"></div>
+ <button class="btn" id="sellSave">Mark as sold</button>
+</section>
+
+<!-- ============ PICK A CARD ============ -->
+<section class="view" data-view="pick" hidden>
+ <div class="top"><button class="ib" data-back aria-label="Back"><i class="ic" data-i="back"></i></button><h2 id="pickTitle">Which card?</h2></div>
+ <div class="msg" id="pickMsg" style="margin-top:0"></div>
+ <div class="panel"><div class="kv"><i class="ic mut" data-i="search"></i><input class="v" id="pickQ" placeholder="Search name or cert" style="text-align:left" autocomplete="off"></div></div>
+ <div class="panel" id="pickList"></div>
+</section>
+
+<!-- ============ CARD DETAIL ============ -->
+<section class="view" data-view="card" hidden>
+ <div class="top"><button class="ib" data-back aria-label="Back"><i class="ic" data-i="back"></i></button><div style="flex:1"></div><button class="ib" id="cdEdit" aria-label="Edit card"><i class="ic" data-i="edit"></i></button></div>
+ <img id="cdImg" class="slab cdimg" alt=""><div id="cdPh" class="slab cdimg ph" hidden><i class="ic" data-i="slab"></i></div>
+ <div class="center" style="margin-top:18px"><h2 id="cdName"></h2><div class="mut" id="cdSub" style="margin-top:4px"></div><div id="cdBadge" class="badge" hidden><i class="ic" data-i="verified"></i>Verified with PSA</div></div>
+ <div class="tiles three" style="margin-top:18px"><div class="tile"><small>Paid</small><b id="cdPaid"></b></div><div class="tile"><small>Held</small><b id="cdHeld"></b></div><div class="tile"><small>Source</small><b id="cdSrc"></b></div></div>
+ <div class="sub">History</div><div class="panel"><div class="tl" id="cdTl"></div></div>
+ <div class="pills" id="cdLinks"></div>
+ <div id="cdActions"></div>
+</section>
+
+<!-- ============ EDIT CARD ============ -->
+<section class="view" data-view="edit" hidden>
+ <div class="top"><button class="ib" data-back aria-label="Back"><i class="ic" data-i="back"></i></button><h2>Edit card</h2></div>
+ <div class="note" id="ePsaNote" hidden></div>
+ <div class="panel">
+  <div class="kv"><span>Name</span><input class="v" id="eName"></div>
+  <div class="kv"><span>Set / year</span><input class="v" id="eSet"></div>
+  <div class="kv"><span>Grader</span><input class="v" id="eGrader"></div>
+  <div class="kv"><span>Grade</span><input class="v" id="eGrade"></div>
+  <div class="kv"><span>Cert #</span><input class="v" id="eCert" inputmode="numeric"></div>
+ </div>
+ <div class="panel">
+  <div class="kv"><span>Price paid</span><input class="v" id="eCost" type="number" step="0.01" inputmode="decimal"></div>
+  <div class="kv"><span>Fees / shipping</span><input class="v" id="eFees" type="number" step="0.01" inputmode="decimal"></div>
+  <div class="kv"><span>Date bought</span><input class="v" id="eBought" type="date"></div>
+  <div class="kv col"><span>Bought from</span><div class="pills wrap" id="eFrom"></div></div>
+ </div>
+ <div class="panel">
+  <div class="kv col"><span>Status</span><div class="pills wrap" id="eStatus"></div><div class="note" id="eTradedNote" hidden style="margin:0 0 14px"></div></div>
+  <div id="eSoldRows">
+   <div class="kv"><span>Sold for</span><input class="v" id="eSoldFor" type="number" step="0.01" inputmode="decimal"></div>
+   <div class="kv"><span>Sell fees</span><input class="v" id="eSellFees" type="number" step="0.01" inputmode="decimal"></div>
+   <div class="kv"><span>Date sold</span><input class="v" id="eSoldOn" type="date"></div>
+   <div class="kv col"><span>Sold on</span><div class="pills wrap" id="ePlat"></div></div>
+  </div>
+ </div>
+ <div class="msg" id="eMsg"></div>
+ <button class="btn" id="eSave">Save changes</button>
+ <button class="btn danger" id="eDel"><i class="ic" data-i="trash"></i>Delete card</button>
+</section>
+
+<!-- ============ TRADE FLOW ============ -->
+<section class="view" data-view="trade" hidden>
+ <div class="top"><button class="ib" id="trClose" aria-label="Cancel trade"><i class="ic" data-i="close"></i></button><h2 id="trTitle">New trade</h2></div>
+ <div class="steps"><i id="st1"></i><i id="st2"></i><i id="st3"></i></div><div class="msg" id="trStep" style="margin-top:2px"></div>
+ <div id="tr1">
+  <div class="btns2"><button class="btn dark" id="trOutScan"><i class="ic" data-i="scan"></i>Scan slab</button><button class="btn dark" id="trOutPick"><i class="ic" data-i="plus"></i>From list</button></div>
+  <div class="msg" id="trOutMsg"></div><div id="trOutList"></div>
+ </div>
+ <div id="tr2" hidden>
+  <div class="panel">
+   <div class="kv"><span>Trade date</span><input class="v" id="trDate" type="date"></div>
+   <div class="kv"><span>Cash I paid</span><input class="v" id="trPaid" type="number" step="0.01" min="0" inputmode="decimal" placeholder="$0.00"></div>
+   <div class="kv"><span>Cash I received</span><input class="v" id="trRecv" type="number" step="0.01" min="0" inputmode="decimal" placeholder="$0.00"></div>
+  </div>
+ </div>
+ <div id="tr3" hidden>
+  <div class="btns2"><button class="btn dark" id="trInScan"><i class="ic" data-i="camera"></i>Photo of slab</button><button class="btn dark" id="trInHand"><i class="ic" data-i="plus"></i>By hand</button></div>
+  <div class="msg" id="trInMsg"></div><div id="trInList"></div>
+  <div class="panel">
+   <div class="kv"><span>Counterparty</span><input class="v" id="trCp" placeholder="Optional"></div>
+   <div class="kv col"><span>Notes</span><textarea class="v" id="trNotes" rows="2" placeholder="Optional"></textarea></div>
+  </div>
+ </div>
+ <div class="panel" id="trBal"></div>
+ <div class="msg" id="trMsg"></div>
+ <div class="btns2"><button class="btn dark" id="trBack">Back</button><button class="btn" id="trNext">Next</button></div>
+</section>
+
+<!-- ============ TRADE DETAIL ============ -->
+<section class="view" data-view="tview" hidden>
+ <div class="top"><button class="ib" data-back aria-label="Back"><i class="ic" data-i="back"></i></button><h2>Trade</h2></div>
+ <div id="tvBody"></div>
+ <div class="msg" id="tvMsg"></div>
+ <button class="btn danger" id="tvDel"><i class="ic" data-i="trash"></i>Delete trade</button>
+</section>
+
+<!-- ============ EXPENSE FORM ============ -->
+<section class="view" data-view="xform" hidden>
+ <div class="top"><button class="ib" data-back aria-label="Back"><i class="ic" data-i="back"></i></button><h2 id="xfTitle">Expense</h2></div>
+ <img id="xfImg" class="slab cdimg" alt="" hidden style="aspect-ratio:auto;max-height:340px;object-fit:contain">
+ <div class="big"><small>Amount</small><div class="bignum"><span>$</span><input id="xfAmt" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0"></div></div>
+ <div class="panel">
+  <div class="kv"><span>Vendor</span><input class="v" id="xfVendor"></div>
+  <div class="kv"><span>Date</span><input class="v" id="xfDate" type="date"></div>
+  <div class="kv"><span>Time</span><input class="v" id="xfTime" type="time"></div>
+  <div class="kv"><span>Tax</span><input class="v" id="xfTax" type="number" step="0.01" min="0" inputmode="decimal" placeholder="$0.00"></div>
+  <div class="kv"><span>Payment</span><input class="v" id="xfPay" placeholder="Card, cash…"></div>
+  <div class="kv col"><span>Category</span><div class="pills wrap" id="xfCat"></div></div>
+  <div class="kv col"><span>Notes</span><textarea class="v" id="xfNotes" rows="2"></textarea></div>
+ </div>
+ <div class="msg" id="xfMsg"></div>
+ <button class="btn" id="xfSave">Save expense</button>
+ <button class="btn danger" id="xfDel"><i class="ic" data-i="trash"></i>Delete expense</button>
+</section>
+
+</main>
+
+<nav id="tabbar" hidden><div class="tbi">
+ <button class="tb on" data-tab="inv"><i class="ic" data-i="slab"></i>Inventory</button>
+ <button class="tb" data-tab="sold"><i class="ic" data-i="tag"></i>Sold</button>
+ <div class="scanwrap"><button class="scanbtn" id="scanBtn" aria-label="Scan a slab"><i class="ic" data-i="scan"></i></button></div>
+ <button class="tb" data-tab="exp"><i class="ic" data-i="receipt"></i>Expenses</button>
+ <button class="tb" data-tab="trades"><i class="ic" data-i="swap"></i>Trades</button>
+</div></nav>
+
+<div class="scrim" id="scrim" hidden></div>
+<div class="sheet" id="sheet" hidden></div>
+<div id="toast" hidden></div>
+<input id="camIn" type="file" accept="image/*" capture="environment" hidden><input id="libIn" type="file" accept="image/*" hidden>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.js"></script>
+<script src="app.js"></script>
+</body></html>
