@@ -327,7 +327,7 @@ async function runScan(display,bmp,bc){const tok=++scanTok;dropScan();
   if(!bc)return aiFill(tok);
   if(bc.grader==='PSA'){scanBusy(true,'Checking PSA');const p=await psaLookup(bc.cert);if(S?.tok!==tok)return;S.psa=p;
     if(p&&p.verified){applyFill(withPsa(S.read,p));return scanBusy(false,'')}
-    if(!p)return aiFill(tok,'Couldn’t reach PSA, reading the label');
+    if(!p)return aiFill(tok,'Reading the label');
     if(!bc.sure)applyFill({...S.read,grader:''});
     $('#scRead').hidden=false;return scanBusy(false,`PSA has no record of cert ${bc.cert}. Check the grader, or read the details from the photo.`)}
   $('#scRead').hidden=false;
@@ -339,14 +339,15 @@ async function aiFill(tok,msg){if(S?.tok!==tok)return;scanBusy(true,msg||'Readin
   if(d){const bc=S.bc;S.read={...d,cert:bc?.cert||d.cert,grader:bc?.sure?bc.grader:(d.grader||bc?.grader||'')};
     if(gnorm(S.read.grader)==='PSA'&&S.read.cert&&!psaFor(S.psa,S.read.cert)){scanBusy(true,'Checking PSA');S.psa=await psaLookup(S.read.cert);if(S?.tok!==tok)return}
     applyFill(withPsa(S.read,S.psa));
-    if(gnorm(S.read.grader)==='PSA'&&S.read.cert)err=!S.psa?'Couldn’t reach PSA, so these details are from the photo.':!S.psa.verified?'PSA has no record of this cert. Check the cert number.':''}
+    if(gnorm(S.read.grader)==='PSA'&&S.read.cert&&S.psa&&!S.psa.verified)err='PSA has no record of this cert. Check the cert number.'}
   $('#scRead').hidden=true;scanBusy(false,err)}
 $('#scRead').onclick=()=>{if(S)aiFill(S.tok)};
 // put new details into every field the user hasn't typed in
 const SCF={name:'#scName',year:'#scYear',set:'#scSet',grader:'#scGrader',grade:'#scGrade',cert:'#scCert'};
 function applyFill(d){S.shown=d;for(const[k,id]of Object.entries(SCF))if(!S.touched.has(k))$(id).value=d[k]||'';updScanned()}
 Object.entries(SCF).forEach(([k,id])=>$(id).addEventListener('input',()=>{if(S)S.touched.add(k)}));
-function scanBusy(on,msg){$('#scShot').classList.toggle('busy',on);$('#scRead').disabled=on;$('#scMsg').innerHTML=on?`<span class="dots">${esc(msg)}</span>`:esc(msg||'')}
+// while a step runs, its name shows in the status chip; afterwards msg (if any) is a note that asks you to do something
+function scanBusy(on,msg){if(S)S.busyMsg=on?msg:'';$('#scShot').classList.toggle('busy',on);$('#scRead').disabled=on;$('#scMsg').textContent=on?'':(msg||'');if(S)updScanned()}
 
 // ---------- live barcode scan ----------
 let liveStream=null,liveTimer=null,liveTok=0;
@@ -364,18 +365,31 @@ function stopLive(){liveTok++;clearTimeout(liveTimer);if(liveStream){liveStream.
 // no barcode in view (or an old label): use the current frame and let the AI read it
 $('#liveSnap').onclick=async()=>{const v=$('#liveVid');if(!liveStream||v.readyState<2)return;const bc=await findBarcode(v),frame=await shrinkTo(v,1280),bmp=await createImageBitmap(frame);stopLive();runScan(frame,bmp,bc)};
 function scanVals(){return{grader:$('#scGrader').value.trim(),grade:$('#scGrade').value.trim(),cert:$('#scCert').value.replace(/\s/g,''),name:$('#scName').value.trim(),year:$('#scYear').value.trim(),set:$('#scSet').value.trim()}}
-function fillScanned(msg){const d=S.shown;$('#scShot').classList.remove('busy');$('#scImg').src=S.url;$('#scName').value=d.name;$('#scYear').value=d.year;$('#scSet').value=d.set;
+function fillScanned(msg){const d=S.shown;$('#scShot').classList.remove('busy');$('#scEdit').hidden=true;$('#scTitle').setAttribute('aria-expanded','false');$('#scImg').src=S.url;$('#scName').value=d.name;$('#scYear').value=d.year;$('#scSet').value=d.set;
   $('#scGrader').value=d.grader;$('#scGrade').value=d.grade;$('#scCert').value=d.cert;$('#scMsg').textContent=msg||'';updScanned()}
-function updScanned(){const v=scanVals(),p=psaFor(S.psa,v.cert);$('#scBadge').hidden=!(p&&p.verified&&gnorm(v.grader)==='PSA');
+// card number shown apart (muted) from the name: 4/102, #100, #SWSH050
+const NUM_RE=/#\s?[A-Z]{0,4}\d{1,4}[A-Z]?\b|\b\d{1,3}\s?\/\s?\d{1,3}\b/i;
+function splitNum(name){const m=String(name||'').match(NUM_RE);if(!m)return{name:String(name||'').trim(),num:''};
+  const n=m[0].replace(/\s/g,'');return{name:String(name).replace(m[0],' ').replace(/[\s,·-]+$/,'').replace(/\s{2,}/g,' ').trim(),num:n.startsWith('#')?n:'#'+n}}
+function updScanned(){const v=scanVals(),p=psaFor(S.psa,v.cert),ok=!!(p&&p.verified&&gnorm(v.grader)==='PSA'),t=splitNum(v.name);
+  $('#scNameTxt').innerHTML=t.name?esc(t.name):'<span class="ph">Add card name</span>';$('#scNumTxt').textContent=t.num;
+  const sub=[v.year,v.set].filter(Boolean).join(' · ');$('#scSubTxt').textContent=sub;$('#scSubTxt').hidden=!sub;
+  const st=$('#scStatus'),busy=S.busyMsg;
+  if(busy){st.className='chip work';st.innerHTML=`<span class="dots">${esc(busy)}</span>`}
+  else if(ok){st.className='chip ok';st.innerHTML=icon('verified',16)+'Verified with PSA'}
+  else if(v.name||v.cert){st.className='chip amber';st.innerHTML=icon('image',16)+'Details from photo'}
+  st.hidden=!(busy||ok||v.name||v.cert);
   const cl=certLink(v.grader,v.cert);$('#scCertLink').hidden=!cl;if(cl){$('#scCertLink').href=cl.url;$('#scCertLabel').textContent='View card on '+cl.label}
-  const vl=valueLinks({...v,psa:S.psa});$('#scValue').innerHTML=vl.links.map(linkPill).join('');$('#scQ').innerHTML=queryLines(vl.lines);fitName()}
+  $('#scValue').innerHTML=valueLinks({...v,psa:S.psa}).links.map(linkPill).join('');fitName()}
+// tap the name to fix it, the year or the set
+$('#scTitle').onclick=()=>{const e=$('#scEdit'),open=e.hidden;e.hidden=!open;$('#scTitle').setAttribute('aria-expanded',String(open));if(open){fitName();$('#scName').focus()}};
 function fitName(){const n=$('#scName');if(!n.offsetParent)return;n.style.height='auto';n.style.height=n.scrollHeight+'px'}
 ['#scName','#scYear','#scSet','#scGrader','#scGrade','#scCert'].forEach(id=>$(id).addEventListener('input',updScanned));
 // a corrected PSA cert gets checked too (once per cert)
 ['#scCert','#scGrader'].forEach(id=>$(id).addEventListener('change',async()=>{const v=scanVals();if(gnorm(v.grader)!=='PSA'||!v.cert||psaFor(S.psa,v.cert))return;
-  $('#scMsg').textContent='Checking PSA…';const p=await psaLookup(v.cert);if(!S)return;S.psa=p||S.psa;
-  if(p&&p.verified){applyFill(withPsa({...S.read,...scanVals()},p));$('#scMsg').textContent='';$('#scRead').hidden=true}
-  else $('#scMsg').textContent=p?'PSA has no record of this cert.':'Couldn’t reach PSA.';updScanned()}));
+  scanBusy(true,'Checking PSA');const p=await psaLookup(v.cert);if(!S)return;S.psa=p||S.psa;
+  if(p&&p.verified){applyFill(withPsa({...S.read,...scanVals()},p));$('#scRead').hidden=true}
+  scanBusy(false,p&&!p.verified?'PSA has no record of this cert.':'')}));
 // Fields still showing PSA's values are saved as the photo reading instead; anything the user typed is kept.
 function ownCols(v,shown,read){const o={...v};if(shown&&read)for(const k of['name','year','set','grade'])if(v[k]===shown[k]&&shown[k]!==read[k])o[k]=read[k];return o}
 const sumRow=(img,name,sub)=>`${img?`<img src="${esc(img)}" alt="">`:`<div class="ph"><i class="ic" data-i="slab"></i></div>`}<div style="min-width:0"><b>${esc(name||'Untitled card')}</b><small>${esc(sub)}</small></div>`;
