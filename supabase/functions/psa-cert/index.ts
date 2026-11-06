@@ -39,7 +39,8 @@ Deno.serve(async (req) => {
   }
   if (!cert || cert.length > 12) return json({ error: "Invalid cert number" }, 400);
 
-  const token = Deno.env.get("PSA_API_TOKEN");
+  // Tolerate a token pasted with quotes, spaces or its own "Bearer " prefix.
+  const token = (Deno.env.get("PSA_API_TOKEN") ?? "").trim().replace(/^["']|["']$/g, "").replace(/^bearer\s+/i, "").trim();
   if (!token) return json({ error: "PSA_API_TOKEN secret is not set" }, 500);
 
   let res: Response;
@@ -53,7 +54,19 @@ Deno.serve(async (req) => {
   }
 
   if (res.status === 429) return json({ error: "PSA rate limit reached; try again later" }, 429);
-  if (res.status === 401 || res.status === 403) return json({ error: "PSA rejected the API token" }, 502);
+  if (res.status === 401 || res.status === 403) {
+    // Tell a refused token apart from PSA's firewall blocking the request (Cloudflare answers with an HTML page).
+    const type = res.headers.get("content-type") ?? "";
+    const body = (await res.text().catch(() => "")).slice(0, 300);
+    const firewall = /cloudflare|cf-ray|attention required|just a moment/i.test(body) || res.headers.has("cf-mitigated");
+    const detail = type.includes("json") ? body.replace(/\s+/g, " ").slice(0, 160) : "";
+    return json({
+      error: firewall
+        ? `PSA's firewall blocked the request (HTTP ${res.status})`
+        : `PSA rejected the API token (HTTP ${res.status})`,
+      ...(detail ? { detail } : {}),
+    }, 502);
+  }
   if (res.status === 204) return json({ verified: false, cert, error: "PSA returned no data for this cert" });
   if (!res.ok) return json({ error: `PSA error ${res.status}` }, 502);
 
